@@ -69,7 +69,7 @@
 /* The actual panel that slides in from right */
 .em-panel-content {
 	position: absolute;
-	top: 0;
+	top: 50px;
 	right: 0;
 	bottom: 0;
 	width: 450px;

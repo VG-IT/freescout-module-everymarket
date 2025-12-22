@@ -4,7 +4,6 @@
 
 var em_customer_emails = [];
 var em_orders_data = [];
-var shop_url = $('#em-shop-url').val();
 
 function initEverymarket(customer_emails, load)
 {
@@ -232,6 +231,7 @@ function emCloseSearchPanel()
 function emBuildOrderDetailsHTML(order)
 {
 	var html = '';
+	var shop_url = $('#em-shop-url').val();
 
 	// Summary section
 	html += '<div class="em-detail-section">';
