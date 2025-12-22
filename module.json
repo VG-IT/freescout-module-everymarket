@@ -1,0 +1,24 @@
+{
+    "name": "Everymarket",
+    "alias": "everymarket",
+    "description": "View customer Everymarket order history in the Customer Profile pane!",
+    "version": "1.0.0",
+    "detailsUrl": "",
+    "author": "",
+    "authorUrl": "",
+    "requiredAppVersion": "1.0.2",
+    "license": "AGPL-3.0",
+    "keywords": ["everymarket", "ecommerce", "orders"],
+    "active": 1,
+    "order": 0,
+    "providers": [
+        "Modules\\Everymarket\\Providers\\EverymarketServiceProvider"
+    ],
+    "aliases": {
+        "Everymarket": "Modules\\Everymarket\\Providers\\EverymarketServiceProvider"
+    },
+    "files": [
+        "start.php"
+    ],
+    "requires": []
+}

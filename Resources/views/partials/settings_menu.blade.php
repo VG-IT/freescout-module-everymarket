@@ -1,0 +1,1 @@
+<li @if (Route::is('mailboxes.everymarket'))class="active"@endif><a href="{{ route('mailboxes.everymarket', ['id'=>$mailbox->id]) }}"><i class="glyphicon glyphicon-shopping-cart"></i> Everymarket</a></li>

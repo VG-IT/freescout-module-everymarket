@@ -1,0 +1,25 @@
+{
+    "name": "freescout/everymarket",
+    "description": "Everymarket Integration for FreeScout",
+    "authors": [
+        {
+            "name": "FreeScout",
+            "email": "support@freescout.net"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\Everymarket\\Providers\\EverymarketServiceProvider"
+            ],
+            "aliases": {
+                
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Everymarket\\": ""
+        }
+    }
+}
