@@ -232,7 +232,7 @@ function emBuildOrderDetailsHTML(order)
 {
 	var html = '';
 	var shop_url = $('#em-shop-url').val();
-
+	console.log(order)
 	// Summary section
 	html += '<div class="em-detail-section">';
 	html += '<div class="em-detail-row">';
@@ -351,8 +351,8 @@ function emBuildOrderDetailsHTML(order)
 	// Discount
 	if (order.adjustment_total && parseFloat(order.adjustment_total) > 0) {
 		html += '<div class="em-receipt-row">';
-		html += '<div class="em-receipt-label">Discount</div>';
-		html += '<div class="em-receipt-value">-' + (order.currency || 'USD') + ' ' + order.adjustment_total + '</div>';
+		html += '<div class="em-receipt-label">Adjustment</div>';
+		html += '<div class="em-receipt-value">' + (order.currency || 'USD') + ' ' + order.adjustment_total + '</div>';
 		html += '</div>';
 	}
 
