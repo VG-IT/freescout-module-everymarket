@@ -4,6 +4,7 @@ namespace Modules\Everymarket\Http\Controllers;
 
 use App\Mailbox;
 use App\Conversation;
+use App\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
@@ -193,6 +194,126 @@ class EverymarketController extends Controller
                     }
                 }
 
+                break;
+
+            case 'create_cs_request':
+                $response['status'] = 'error';
+                
+                $mailbox = null;
+                if ($request->mailbox_id) {
+                    $mailbox = Mailbox::find($request->mailbox_id);
+                }
+                
+                if (empty($request->order_number) || empty($request->line_item_id) || empty($request->reason) || empty($request->note)) {
+                    $response['msg'] = 'Missing required fields';
+                    break;
+                }
+                
+                $mailbox_api_enabled = \Everymarket::isMailboxApiEnabled($mailbox);
+                
+                // Call Everymarket API to create CS request
+                if (\Everymarket::isApiEnabled() || $mailbox_api_enabled) {
+                    $api_result = \Everymarket::apiPostCsRequests($request, $mailbox);
+                    
+                    if (!empty($api_result['error'])) {
+                        $response['status'] = 'error';
+                        $response['msg'] = $api_result['error'];
+                        \Log::error('[Everymarket] Failed to create CS request: ' . $api_result['error']);
+                    } else {
+                        $response['status'] = 'success';
+                        $response['msg'] = __('CS request created successfully');
+                        
+                        // Clear cache for this order so it refreshes on next load
+                        // Cache key would need customer email, which we don't have here
+                        // The cache will expire naturally or can be cleared manually
+                    }
+                } else {
+                    $response['status'] = 'error';
+                    $response['msg'] = __('API is not enabled');
+                }
+                
+                break;
+
+            case 'add_cs_request_event':
+                $response['status'] = 'error';
+                
+                $mailbox = null;
+                if ($request->mailbox_id) {
+                    $mailbox = Mailbox::find($request->mailbox_id);
+                }
+                
+                if (empty($request->order_request_id) || empty($request->note)) {
+                    $response['msg'] = 'Missing required fields';
+                    break;
+                }
+                
+                $mailbox_api_enabled = \Everymarket::isMailboxApiEnabled($mailbox);
+                
+                // Call Everymarket API to add event/note to CS request
+                if (\Everymarket::isApiEnabled() || $mailbox_api_enabled) {
+                    $api_result = \Everymarket::apiPostCsRequestEvent(
+                        $request->order_number ?? '',
+                        $request->order_request_id,
+                        $request->note,
+                        $request->user_email ?? null,
+                        $mailbox
+                    );
+                    
+                    if (!empty($api_result['error'])) {
+                        $response['status'] = 'error';
+                        $response['msg'] = $api_result['error'];
+                        \Log::error('[Everymarket] Failed to add CS request event: ' . $api_result['error']);
+                    } else {
+                        $response['status'] = 'success';
+                        $response['msg'] = __('Note added successfully');
+                        // Cache update will be handled by frontend after appending the event
+                    }
+                } else {
+                    $response['status'] = 'error';
+                    $response['msg'] = __('API is not enabled');
+                }
+                
+                break;
+
+            case 'close_cs_request':
+                $response['status'] = 'error';
+                
+                $mailbox = null;
+                if ($request->mailbox_id) {
+                    $mailbox = Mailbox::find($request->mailbox_id);
+                }
+                
+                if (empty($request->order_request_id) || empty($request->order_number)) {
+                    $response['msg'] = 'Missing required fields';
+                    break;
+                }
+                
+                $mailbox_api_enabled = \Everymarket::isMailboxApiEnabled($mailbox);
+                
+                // Call Everymarket API to close/finalize CS request
+                if (\Everymarket::isApiEnabled() || $mailbox_api_enabled) {
+                    $api_result = \Everymarket::apiFinalizeCsRequest(
+                        $request->order_number,
+                        $request->order_request_id,
+                        $request->note ?? null,
+                        $request->user_email ?? null,
+                        $mailbox
+                    );
+                    
+                    if (!empty($api_result['error'])) {
+                        $response['status'] = 'error';
+                        $response['msg'] = $api_result['error'];
+                        \Log::error('[Everymarket] Failed to close CS request: ' . $api_result['error']);
+                    } else {
+                        $response['status'] = 'success';
+                        $response['msg'] = __('CS request closed successfully');
+                        // Cache update will be handled by frontend after closing the request
+                    }
+                } else {
+                    $response['status'] = 'error';
+                    $response['msg'] = __('API is not enabled');
+                }
+                
                 break;
 
             default:

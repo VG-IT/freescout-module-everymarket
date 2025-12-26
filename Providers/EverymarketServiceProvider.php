@@ -248,6 +248,7 @@ class EverymarketServiceProvider extends ServiceProvider
 
             echo \View::make('everymarket::partials/orders', [
                 'orders'          => $orders,
+                'customer'        => $customer,
                 'customer_emails' => $customer_emails,
                 'load'            => $load,
                 'shop_url'        => \Everymarket::getSanitizedShopDomain($shop_url),
@@ -364,7 +365,17 @@ class EverymarketServiceProvider extends ServiceProvider
             return ['error' => $orders_result['error'], 'data' => []];
         }
 
-        return ['error' => '', 'data' => $orders_result['data']['orders'] ?? []];
+        $orders = [];
+        foreach($orders_result['data']['orders'] as $key => $order) {
+            $cs_requests_url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . $order['number'] . '/cs_requests?token=' . $api_info["access_token"];
+            $cs_requests_result = self::makeEverymarketApiCall($cs_requests_url);
+            if(empty($cs_requests_result['error'])) {
+                $order['cs_requests'] = $cs_requests_result['data'];
+            }
+            $orders[$key] = $order;
+        }
+
+        return ['error' => '', 'data' => $orders ?? []];
     }
 
     public static function apiGetCustomers($search_input, $mailbox = null)
@@ -398,10 +409,95 @@ class EverymarketServiceProvider extends ServiceProvider
         return ['error' => '', 'data' => $customers_result['data']['orders'] ?? []];
     }
 
+    public static function apiPostCsRequests($request, $mailbox = null)
+    {
+        $api_info = self::getApiInfo($mailbox);
+        $order_number = $request->order_number ?? '';
+        
+        if (empty($order_number)) {
+            return ['error' => 'Order number is required', 'data' => []];
+        }
+
+        $url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . $order_number . '/cs_requests?token=' . $api_info["access_token"];
+
+        $post_data = [
+            'line_item_id' => $request->line_item_id ?? null,
+            'reason' => $request->reason ?? null,
+            'note' => $request->note ?? null,
+            'user_email' => $request->user_email ?? null,
+        ];
+
+        return self::makeEverymarketApiCall($url, $post_data);
+    }
+
+    /**
+     * Post an event/note to an existing CS request.
+     * 
+     * @param string $order_number
+     * @param string $order_request_id The CS request ID
+     * @param string $line_item_id
+     * @param string $note
+     * @param string|null $user_email
+     * @param Mailbox|null $mailbox
+     * @return array
+     */
+    public static function apiPostCsRequestEvent($order_number, $order_request_id, $note, $user_email = null, $mailbox = null)
+    {
+        $api_info = self::getApiInfo($mailbox);
+        
+        if (empty($order_request_id) || empty($note)) {
+            return ['error' => 'Order request ID and note are required', 'data' => []];
+        }
+
+        $url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . $order_number . '/cs_requests/' . $order_request_id . '/events?token=' . $api_info["access_token"];
+
+        $post_data = [
+            'note' => $note,
+            'user_email' => $user_email,
+        ];
+
+        return self::makeEverymarketApiCall($url, $post_data);
+    }
+
+    /**
+     * Finalize/close a CS request.
+     * 
+     * @param string $order_number
+     * @param string $order_request_id The CS request ID
+     * @param string|null $note Optional note
+     * @param string|null $user_email
+     * @param Mailbox|null $mailbox
+     * @return array
+     */
+    public static function apiFinalizeCsRequest($order_number, $order_request_id, $note = null, $user_email = null, $mailbox = null)
+    {
+        $api_info = self::getApiInfo($mailbox);
+        
+        if (empty($order_number) || empty($order_request_id)) {
+            return ['error' => 'Order number and order request ID are required', 'data' => []];
+        }
+
+        $url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . $order_number . '/cs_requests/' . $order_request_id . '/finalize?token=' . $api_info["access_token"];
+
+        $post_data = [];
+        if ($note !== null) {
+            $post_data['note'] = $note;
+        }
+        if ($user_email !== null) {
+            $post_data['user_email'] = $user_email;
+        }
+
+        return self::makeEverymarketApiCall($url, $post_data);
+    }
+
     /**
      * Make Everymarket API call with authentication.
+     * 
+     * @param string $url The API URL
+     * @param array|null $post_data Optional POST data (if provided, makes POST request)
+     * @return array Response array with 'error' and 'data' keys
      */
-    private static function makeEverymarketApiCall($url)
+    private static function makeEverymarketApiCall($url, $post_data = null)
     {
         $response = ['error' => '', 'data' => []];
 
@@ -416,16 +512,26 @@ class EverymarketServiceProvider extends ServiceProvider
             curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
+            // If POST data is provided, make a POST request
+            if ($post_data !== null) {
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+            }
+
             $json = curl_exec($ch);
             $status_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
 
             $json_decoded = json_decode($json, true);
 
-            \Log::info('[Everymarket] API Response - Status: ' . $status_code . ', URL: ' . $url);
+            $method = $post_data !== null ? 'POST' : 'GET';
+            \Log::info('[Everymarket] API ' . $method . ' - Status: ' . $status_code . ', URL: ' . $url);
+            if ($post_data !== null) {
+                \Log::info('[Everymarket] API POST Data: ' . json_encode($post_data));
+            }
             \Log::info('[Everymarket] API Response Body: ' . substr($json, 0, 500));
 
-            if ($status_code == 200) {
+            if ($status_code >= 200 && $status_code < 300) {
                 $response['data'] = $json_decoded;
             } else {
                 $response['error'] = 'HTTP Status Code: ' . $status_code . ' (' . self::errorCodeDescr($status_code) . ')';
