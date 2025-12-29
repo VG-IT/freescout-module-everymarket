@@ -167,7 +167,8 @@ function emInitPanelHandlers()
 			reason: reason,
 			note: note,
 			user_email: em_user_email,
-			mailbox_id: getGlobalAttr('mailbox_id')
+			mailbox_id: getGlobalAttr('mailbox_id'),
+			conversation_id: getGlobalAttr('conversation_id')
 		},
 		laroute.route('everymarket.ajax'),
 		function(response) {
@@ -230,7 +231,8 @@ function emInitPanelHandlers()
 			order_number: orderNumber,
 			note: note,
 			user_email: em_user_email,
-			mailbox_id: getGlobalAttr('mailbox_id')
+			mailbox_id: getGlobalAttr('mailbox_id'),
+			conversation_id: getGlobalAttr('conversation_id')
 		},
 		laroute.route('everymarket.ajax'),
 		function(response) {
@@ -297,7 +299,8 @@ function emInitPanelHandlers()
 			order_number: orderNumber,
 			note: note,
 			user_email: em_user_email,
-			mailbox_id: getGlobalAttr('mailbox_id')
+			mailbox_id: getGlobalAttr('mailbox_id'),
+			conversation_id: getGlobalAttr('conversation_id')
 		},
 		laroute.route('everymarket.ajax'),
 		function(response) {

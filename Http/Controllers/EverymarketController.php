@@ -213,6 +213,7 @@ class EverymarketController extends Controller
                 
                 // Call Everymarket API to create CS request
                 if (\Everymarket::isApiEnabled() || $mailbox_api_enabled) {
+
                     $api_result = \Everymarket::apiPostCsRequests($request, $mailbox);
                     
                     if (!empty($api_result['error'])) {
@@ -223,6 +224,9 @@ class EverymarketController extends Controller
                         $response['status'] = 'success';
                         $response['msg'] = __('CS request created successfully');
                         
+                        $user = auth()->user();
+                        $conversation = Conversation::find($request->conversation_id);
+                        $conversation->follow($user);
                         // Clear cache for this order so it refreshes on next load
                         // Cache key would need customer email, which we don't have here
                         // The cache will expire naturally or can be cleared manually
@@ -236,7 +240,7 @@ class EverymarketController extends Controller
 
             case 'add_cs_request_event':
                 $response['status'] = 'error';
-                
+
                 $mailbox = null;
                 if ($request->mailbox_id) {
                     $mailbox = Mailbox::find($request->mailbox_id);
@@ -266,6 +270,12 @@ class EverymarketController extends Controller
                     } else {
                         $response['status'] = 'success';
                         $response['msg'] = __('Note added successfully');
+
+                        $user = auth()->user();
+                        $conversation = Conversation::find($request->conversation_id);
+                        if(!$conversation->isFollowedByUser($user->id)) {
+                            $conversation->follow($user);
+                        }
                         // Cache update will be handled by frontend after appending the event
                     }
                 } else {
@@ -277,7 +287,7 @@ class EverymarketController extends Controller
 
             case 'close_cs_request':
                 $response['status'] = 'error';
-                
+
                 $mailbox = null;
                 if ($request->mailbox_id) {
                     $mailbox = Mailbox::find($request->mailbox_id);
@@ -307,6 +317,10 @@ class EverymarketController extends Controller
                     } else {
                         $response['status'] = 'success';
                         $response['msg'] = __('CS request closed successfully');
+
+                        $user = auth()->user();
+                        $conversation = Conversation::find($request->conversation_id);
+                        $conversation->unfollow($user);
                         // Cache update will be handled by frontend after closing the request
                     }
                 } else {
