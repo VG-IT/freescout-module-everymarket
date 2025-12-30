@@ -229,6 +229,7 @@ class EverymarketController extends Controller
                         $conversation->requestedBy($user);
 
                         \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
+                        $conversation->setMeta('custom_fields.cs_request_status', 'waiting_reply', true);
                         // Clear cache for this order so it refreshes on next load
                         // Cache key would need customer email, which we don't have here
                         // The cache will expire naturally or can be cleared manually
@@ -278,7 +279,9 @@ class EverymarketController extends Controller
                         if(!$conversation->isRequestedByUser($user->id)) {
                             $conversation->requestedBy($user);
                         }
+
                         \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
+                        $conversation->setMeta('custom_fields.cs_request_status', 'waiting_reply', true);
                         // Cache update will be handled by frontend after appending the event
                     }
                 } else {
@@ -324,7 +327,9 @@ class EverymarketController extends Controller
                         $user = auth()->user();
                         $conversation = Conversation::find($request->conversation_id);
                         // $conversation->unrequestedBy($user);
+                        
                         \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'request_closed');
+                        $conversation->setMeta('custom_fields.cs_request_status', 'request_closed', true);
                         // Cache update will be handled by frontend after closing the request
                     }
                 } else {
