@@ -228,7 +228,7 @@ class EverymarketController extends Controller
                         $conversation = Conversation::find($request->conversation_id);
                         $conversation->requestedBy($user);
 
-                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'Request Status', 'waiting_reply');
+                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
                         // Clear cache for this order so it refreshes on next load
                         // Cache key would need customer email, which we don't have here
                         // The cache will expire naturally or can be cleared manually
@@ -278,7 +278,7 @@ class EverymarketController extends Controller
                         if(!$conversation->isRequestedByUser($user->id)) {
                             $conversation->requestedBy($user);
                         }
-                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'Request Status', 'waiting_reply');
+                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
                         // Cache update will be handled by frontend after appending the event
                     }
                 } else {
@@ -324,7 +324,7 @@ class EverymarketController extends Controller
                         $user = auth()->user();
                         $conversation = Conversation::find($request->conversation_id);
                         // $conversation->unrequestedBy($user);
-                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'Request Status', 'request_closed');
+                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'request_closed');
                         // Cache update will be handled by frontend after closing the request
                     }
                 } else {
