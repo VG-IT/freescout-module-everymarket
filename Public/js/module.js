@@ -7,7 +7,7 @@ var em_orders_data = [];
 var em_customer_id = null;
 var em_user_email = '';
 
-function initEverymarket(customer_emails, load, customer_id, user_email, load_order_details_on_load)
+function initEverymarket(customer_emails, load, customer_id, user_email)
 {
 	em_customer_emails = customer_emails;
 	em_customer_id = customer_id;
@@ -40,10 +40,8 @@ function initEverymarket(customer_emails, load, customer_id, user_email, load_or
 		emInitPanelHandlers();
 		emInitSearchPanelHandlers();
 
-		// Auto-load Order Details on page load if Order Number custom field has value
-		if (load_order_details_on_load === true) {
-			emLoadOrderDetails();
-		}
+		// Auto-load Order Details on page load (API returns "No Order Found" when Order Number custom field is empty)
+		setTimeout(function() { emLoadOrderDetails(); }, 500);
 	});
 }
 
@@ -88,7 +86,7 @@ function emLoadOrders()
 					for (var i = 0; i < em_orders_data.length; i++) {
 						if (em_orders_data[i] && em_orders_data[i].number === currentOrderNumber) {
 							// Update panel content with fresh data (panel stays open)
-							var html = emBuildOrderDetailsHTML(em_orders_data[i]);
+							var html = emBuildOrderDetailsHTML(em_orders_data[i], false);
 							$('#em-panel-body').html(html);
 							// Re-init panel handlers for the updated content
 							emInitPanelHandlers();
@@ -473,8 +471,8 @@ function emShowOrderPanel(order)
 	// Update order number in header
 	$('#em-panel-title .order-number').text(order.number);
 
-	// Build and inject order details HTML
-	var html = emBuildOrderDetailsHTML(order);
+	// Build and inject order details HTML (no CS Requests in Order History panel)
+	var html = emBuildOrderDetailsHTML(order, false);
 	$('#em-panel-body').html(html);
 	
 	// Remove any loading states in events containers and CS requests sections
@@ -509,76 +507,16 @@ function emCloseSearchPanel()
 	$('body').css('overflow', '');
 }
 
-function emBuildOrderDetailsHTML(order)
+function emBuildOrderDetailsHTML(order, includeCsRequests)
 {
 	var html = '';
 	var shop_url = ($('#em-shop-url').val() || $('#em-order-details-shop-url').val() || '');
+	if (includeCsRequests === undefined) includeCsRequests = true;
 	console.log(order)
 
-	// Line items (at top)
-	if (order.line_items && order.line_items.length > 0) {
-		html += '<div class="em-detail-section">';
-		html += '<div class="em-detail-section-title">Items (' + order.line_items.length + ')</div>';
-		for (var j = 0; j < order.line_items.length; j++) {
-			var item = order.line_items[j];
-			html += '<div class="em-line-item">';
-
-			// Product icon/image placeholder
-			html += '<div class="em-line-item-image">';
-			html += item.variant.images.length > 0 ? '<img src="' + item.variant.images[0].large_url + '" height="60" />' : '📦'; // Box emoji as placeholder
-			html += '</div>';
-
-			// Product details
-			html += '<div class="em-line-item-details">';
-			html += '<div class="em-line-item-name"><a href="'+ shop_url + '/products/'+item.variant.slug+'" target="_blank">' + emEscapeHtml(item.variant.name) + '</a></div>';
-			if (item.variant.sku) {
-				html += '<div class="em-line-item-sku">SKU: ' + emEscapeHtml(item.variant.sku) + '</div>';
-			}
-			html += '</div>';
-
-			// Price
-			html += '<div class="em-line-item-price">';
-			html += '<div class="em-line-item-amount">' + (order.currency || 'USD') + ' ' + item.price + '</div>';
-			html += '<div class="em-line-item-quantity">× ' + item.quantity + '</div>';
-			html += '</div>';
-
-			html += '</div>';
-		}
-		html += '</div>';
-	}
-
-	// Order details
-	html += '<div class="em-detail-section">';
-	html += '<div class="em-detail-section-title">Order Details</div>';
-
-	html += '<div class="em-detail-row">';
-	html += '<div class="em-detail-label">Order Status</div>';
-	html += '<div class="em-detail-value">';
-	html += emGetFulfillmentBadge(order.shipment_state);
-	html += '</div>';
-	html += '</div>';
-
-	html += '<div class="em-detail-row">';
-	html += '<div class="em-detail-label">Order Placed</div>';
-	html += '<div class="em-detail-value">' + emFormatDate(order.created_at) + '</div>';
-	html += '</div>';
-
-	html += '<div class="em-detail-row">';
-	html += '<div class="em-detail-label">Payment Status</div>';
-	html += '<div class="em-detail-value">' + emGetPaymentBadge(order.payment_state) + '</div>';
-	html += '</div>';
-	html += '<div class="em-detail-row">';
-	html += '<div class="em-detail-label">';
-	html += '<a href="' + shop_url + '/customer_service/search?q=' + order.number + '" target="_blank" class="em-panel-link">View on EM →</a>';
-	html += '</div>';
-	html += '<div class="em-detail-value">';
-	html += '<a href="' + shop_url + '/admin/orders/' + order.number + '/invoice.pdf" target="_blank" class="em-panel-link"><span class="em-status-badge em-status-fulfilled">Download Invoice</span></a>';
-	html += '</div>';
-	html += '</div>';
-	html += '</div>';
-
-	// Order requests section
-	if (order.cs_requests && order.cs_requests.length > 0) {
+	// CS Requests (at top) - only in Order Details section, not in Order History panel
+	if (includeCsRequests) {
+		if (order.cs_requests && order.cs_requests.length > 0) {
 		html += '<div class="em-detail-section">';
 		html += '<div class="em-detail-section-title">';
 		html += '<strong>CS Requests</strong>';
@@ -706,7 +644,7 @@ function emBuildOrderDetailsHTML(order)
 		}
 
 		html += '</div>';
-	} else {
+		} else {
 		// Show form to create new CS request when none exist
 		html += '<div class="em-detail-section">';
 		html += '<div class="em-detail-section-title">';
@@ -753,7 +691,70 @@ function emBuildOrderDetailsHTML(order)
 		html += '</form>';
 		html += '</div>';
 		html += '</div>';
+		}
 	}
+
+	// Line items
+	if (order.line_items && order.line_items.length > 0) {
+		html += '<div class="em-detail-section">';
+		html += '<div class="em-detail-section-title">Items (' + order.line_items.length + ')</div>';
+		for (var j = 0; j < order.line_items.length; j++) {
+			var item = order.line_items[j];
+			html += '<div class="em-line-item">';
+
+			// Product icon/image placeholder
+			html += '<div class="em-line-item-image">';
+			html += item.variant.images.length > 0 ? '<img src="' + item.variant.images[0].large_url + '" height="60" />' : '📦'; // Box emoji as placeholder
+			html += '</div>';
+
+			// Product details
+			html += '<div class="em-line-item-details">';
+			html += '<div class="em-line-item-name"><a href="'+ shop_url + '/products/'+item.variant.slug+'" target="_blank">' + emEscapeHtml(item.variant.name) + '</a></div>';
+			if (item.variant.sku) {
+				html += '<div class="em-line-item-sku">SKU: ' + emEscapeHtml(item.variant.sku) + '</div>';
+			}
+			html += '</div>';
+
+			// Price
+			html += '<div class="em-line-item-price">';
+			html += '<div class="em-line-item-amount">' + (order.currency || 'USD') + ' ' + item.price + '</div>';
+			html += '<div class="em-line-item-quantity">× ' + item.quantity + '</div>';
+			html += '</div>';
+
+			html += '</div>';
+		}
+		html += '</div>';
+	}
+
+	// Order details
+	html += '<div class="em-detail-section">';
+	html += '<div class="em-detail-section-title">Order Details</div>';
+
+	html += '<div class="em-detail-row">';
+	html += '<div class="em-detail-label">Order Status</div>';
+	html += '<div class="em-detail-value">';
+	html += emGetFulfillmentBadge(order.shipment_state);
+	html += '</div>';
+	html += '</div>';
+
+	html += '<div class="em-detail-row">';
+	html += '<div class="em-detail-label">Order Placed</div>';
+	html += '<div class="em-detail-value">' + emFormatDate(order.created_at) + '</div>';
+	html += '</div>';
+
+	html += '<div class="em-detail-row">';
+	html += '<div class="em-detail-label">Payment Status</div>';
+	html += '<div class="em-detail-value">' + emGetPaymentBadge(order.payment_state) + '</div>';
+	html += '</div>';
+	html += '<div class="em-detail-row">';
+	html += '<div class="em-detail-label">';
+	html += '<a href="' + shop_url + '/customer_service/search?q=' + order.number + '" target="_blank" class="em-panel-link">View on EM →</a>';
+	html += '</div>';
+	html += '<div class="em-detail-value">';
+	html += '<a href="' + shop_url + '/admin/orders/' + order.number + '/invoice.pdf" target="_blank" class="em-panel-link"><span class="em-status-badge em-status-fulfilled">Download Invoice</span></a>';
+	html += '</div>';
+	html += '</div>';
+	html += '</div>';
 
 	// Shipping address
 	if (order.ship_address) {
