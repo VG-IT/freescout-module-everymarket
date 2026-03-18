@@ -1,14 +1,14 @@
 <div class="panel-heading">
     <h4 class="panel-title">
         <a data-toggle="collapse" href=".em-collapse-orders">
-            {{ __("Recent Orders") }}
+            {{ __("Customer's Order History") }}
             <b class="caret"></b>
         </a>
     </h4>
 </div>
 <div class="em-collapse-orders panel-collapse collapse in">
     <div class="panel-body">
-        <div class="sidebar-block-header2"><strong>{{ __("Recent Orders") }}</strong> (<a data-toggle="collapse" href=".em-collapse-orders">{{ __('close') }}</a>)</div>
+        <div class="sidebar-block-header2"><strong>{{ __("Customer's Order History") }}</strong> (<a data-toggle="collapse" href=".em-collapse-orders">{{ __('close') }}</a>)</div>
        	<div id="em-loader">
         	<img src="{{ asset('img/loader-tiny.gif') }}" />
         </div>

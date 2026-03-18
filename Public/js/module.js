@@ -465,6 +465,38 @@ function emBuildOrderDetailsHTML(order)
 	var shop_url = $('#em-shop-url').val();
 	console.log(order)
 
+	// Line items (at top)
+	if (order.line_items && order.line_items.length > 0) {
+		html += '<div class="em-detail-section">';
+		html += '<div class="em-detail-section-title">Items (' + order.line_items.length + ')</div>';
+		for (var j = 0; j < order.line_items.length; j++) {
+			var item = order.line_items[j];
+			html += '<div class="em-line-item">';
+
+			// Product icon/image placeholder
+			html += '<div class="em-line-item-image">';
+			html += item.variant.images.length > 0 ? '<img src="' + item.variant.images[0].large_url + '" height="60" />' : '📦'; // Box emoji as placeholder
+			html += '</div>';
+
+			// Product details
+			html += '<div class="em-line-item-details">';
+			html += '<div class="em-line-item-name"><a href="'+ shop_url + '/products/'+item.variant.slug+'" target="_blank">' + emEscapeHtml(item.variant.name) + '</a></div>';
+			if (item.variant.sku) {
+				html += '<div class="em-line-item-sku">SKU: ' + emEscapeHtml(item.variant.sku) + '</div>';
+			}
+			html += '</div>';
+
+			// Price
+			html += '<div class="em-line-item-price">';
+			html += '<div class="em-line-item-amount">' + (order.currency || 'USD') + ' ' + item.price + '</div>';
+			html += '<div class="em-line-item-quantity">× ' + item.quantity + '</div>';
+			html += '</div>';
+
+			html += '</div>';
+		}
+		html += '</div>';
+	}
+
 	// Order details
 	html += '<div class="em-detail-section">';
 	html += '<div class="em-detail-section-title">Order Details</div>';
@@ -709,38 +741,6 @@ function emBuildOrderDetailsHTML(order)
 				}
 				html += '</div>';
 			}
-		}
-		html += '</div>';
-	}
-
-	// Line items
-	if (order.line_items && order.line_items.length > 0) {
-		html += '<div class="em-detail-section">';
-		html += '<div class="em-detail-section-title">Items (' + order.line_items.length + ')</div>';
-		for (var j = 0; j < order.line_items.length; j++) {
-			var item = order.line_items[j];
-			html += '<div class="em-line-item">';
-
-			// Product icon/image placeholder
-			html += '<div class="em-line-item-image">';
-			html += item.variant.images.length > 0 ? '<img src="' + item.variant.images[0].large_url + '" height="60" />' : '📦'; // Box emoji as placeholder
-			html += '</div>';
-
-			// Product details
-			html += '<div class="em-line-item-details">';
-			html += '<div class="em-line-item-name"><a href="'+ shop_url + '/products/'+item.variant.slug+'" target="_blank">' + emEscapeHtml(item.variant.name) + '</a></div>';
-			if (item.variant.sku) {
-				html += '<div class="em-line-item-sku">SKU: ' + emEscapeHtml(item.variant.sku) + '</div>';
-			}
-			html += '</div>';
-
-			// Price
-			html += '<div class="em-line-item-price">';
-			html += '<div class="em-line-item-amount">' + (order.currency || 'USD') + ' ' + item.price + '</div>';
-			html += '<div class="em-line-item-quantity">× ' + item.quantity + '</div>';
-			html += '</div>';
-
-			html += '</div>';
 		}
 		html += '</div>';
 	}
