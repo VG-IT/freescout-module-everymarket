@@ -1,3 +1,16 @@
+/* Wider customer sidebar for Order Details (desktop only) */
+@media (min-width: 1100px) {
+	#conv-layout-customer {
+		width: 440px;
+	}
+	#conv-layout-header {
+		padding-right: 440px;
+	}
+	#conv-layout-main {
+		padding-right: 440px;
+	}
+}
+
 .navbar-static-top {
 	z-index: 10;
 }
@@ -86,7 +99,7 @@
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: 550px;
+	width: 450px;
 	max-width: 90vw;
 	background: #ffffff;
 	box-shadow: -2px 0 10px rgba(0,0,0,0.2);

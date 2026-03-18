@@ -246,13 +246,38 @@ class EverymarketServiceProvider extends ServiceProvider
             //     }
             // }
 
+            // Check if Order Number custom field has value (for auto-loading Order Details on page load)
+            $load_order_details_on_load = false;
+            if (\Everymarket::isApiEnabled() || self::isMailboxApiEnabled($mailbox)) {
+                $custom_field = \DB::table('custom_fields')
+                    ->where('mailbox_id', $mailbox->id)
+                    ->where('name', 'Order Number')
+                    ->first();
+                if ($custom_field) {
+                    $ccf = \DB::table('conversation_custom_field')
+                        ->where('conversation_id', $conversation->id)
+                        ->where('custom_field_id', $custom_field->id)
+                        ->first();
+                    if (!$ccf && \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields')) {
+                        $ccf = \DB::table('conversation_custom_fields')
+                            ->where('conversation_id', $conversation->id)
+                            ->where('custom_field_id', $custom_field->id)
+                            ->first();
+                    }
+                    if ($ccf && !empty(trim($ccf->value ?? ''))) {
+                        $load_order_details_on_load = true;
+                    }
+                }
+            }
+
             echo \View::make('everymarket::partials/orders', [
-                'orders'          => $orders,
-                'customer'        => $customer,
-                'customer_emails' => $customer_emails,
-                'load'            => $load,
-                'shop_url'        => \Everymarket::getSanitizedShopDomain($shop_url),
-                'api_url'         => \Everymarket::getSanitizedApiDomain($api_url),
+                'orders'                    => $orders,
+                'customer'                  => $customer,
+                'customer_emails'           => $customer_emails,
+                'load'                      => $load,
+                'shop_url'                  => \Everymarket::getSanitizedShopDomain($shop_url),
+                'api_url'                   => \Everymarket::getSanitizedApiDomain($api_url),
+                'load_order_details_on_load'=> $load_order_details_on_load,
             ])->render();
 
         }, 12, 3);

@@ -93,5 +93,5 @@
 
 @section('javascript')
     @parent
-    initEverymarket({!! json_encode($customer_emails) !!}, {{ (int)$load }}, {{ isset($customer) && $customer ? $customer->id : 'null' }}, '{{ Auth::user()->email ?? '' }}');
+    initEverymarket({!! json_encode($customer_emails) !!}, {{ (int)$load }}, {{ isset($customer) && $customer ? $customer->id : 'null' }}, '{{ Auth::user()->email ?? '' }}', {{ isset($load_order_details_on_load) && $load_order_details_on_load ? 'true' : 'false' }});
 @endsection

@@ -7,7 +7,7 @@ var em_orders_data = [];
 var em_customer_id = null;
 var em_user_email = '';
 
-function initEverymarket(customer_emails, load, customer_id, user_email)
+function initEverymarket(customer_emails, load, customer_id, user_email, load_order_details_on_load)
 {
 	em_customer_emails = customer_emails;
 	em_customer_id = customer_id;
@@ -39,6 +39,11 @@ function initEverymarket(customer_emails, load, customer_id, user_email)
 		// Panel event handlers
 		emInitPanelHandlers();
 		emInitSearchPanelHandlers();
+
+		// Auto-load Order Details on page load if Order Number custom field has value
+		if (load_order_details_on_load === true) {
+			emLoadOrderDetails();
+		}
 	});
 }
 
