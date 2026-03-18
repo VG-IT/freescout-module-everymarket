@@ -23,6 +23,7 @@
                         <li class="em-order-item" data-order-index="{{ $loop->index }}" style="cursor: pointer;">
                             <div>
                                 <a href="javascript:void(0)" class="em-order-link">#{{ $order['number'] }}</a>
+                                <span class="em-order-copy" data-order-number="{{ $order['number'] }}" title="{{ __('Copy order number') }}" role="button"><i class="glyphicon glyphicon-duplicate"></i></span>
                                 @if ($has_cs_requests)
                                     <span class="label label-info" style="margin-left: 5px; font-size: 10px; padding: 2px 5px;" title="{{ __('Has CS Requests') }}">CS</span>
                                 @endif

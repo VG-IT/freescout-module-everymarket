@@ -145,9 +145,20 @@ function emInitPanelHandlers()
 	// Click handler for order items
 	$(document).off('click', '.em-order-item').on('click', '.em-order-item', function(e) {
 		e.preventDefault();
+		if ($(e.target).closest('.em-order-copy').length) return;
 		var orderIndex = $(this).data('order-index');
 		if (typeof orderIndex !== 'undefined' && em_orders_data[orderIndex]) {
 			emShowOrderPanel(em_orders_data[orderIndex]);
+		}
+	});
+
+	// Copy order number (without # prefix) when copy icon clicked
+	$(document).off('click', '.em-order-copy').on('click', '.em-order-copy', function(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		var orderNumber = $(this).data('order-number');
+		if (orderNumber) {
+			emCopyToClipboard(String(orderNumber));
 		}
 	});
 
@@ -885,6 +896,38 @@ function emFormatAddress(address)
 	if (address.country) parts.push(emEscapeHtml(address.country.name));
 
 	return parts.join('<br>');
+}
+
+function emCopyToClipboard(text)
+{
+	if (navigator.clipboard && navigator.clipboard.writeText) {
+		navigator.clipboard.writeText(text).then(function() {
+			if (typeof showFloatingAlert === 'function') {
+				showFloatingAlert('success', 'Copied to clipboard');
+			}
+		}).catch(function() {
+			emCopyToClipboardFallback(text);
+		});
+	} else {
+		emCopyToClipboardFallback(text);
+	}
+}
+
+function emCopyToClipboardFallback(text)
+{
+	var ta = document.createElement('textarea');
+	ta.value = text;
+	ta.style.position = 'fixed';
+	ta.style.left = '-9999px';
+	document.body.appendChild(ta);
+	ta.select();
+	try {
+		document.execCommand('copy');
+		if (typeof showFloatingAlert === 'function') {
+			showFloatingAlert('success', 'Copied to clipboard');
+		}
+	} catch (e) {}
+	document.body.removeChild(ta);
 }
 
 function emFormatDate(dateString)

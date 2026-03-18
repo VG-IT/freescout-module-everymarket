@@ -33,6 +33,20 @@
 	border-radius: 3px;
 }
 
+.em-order-copy {
+	display: inline-block;
+	margin-left: 4px;
+	padding: 2px 4px;
+	cursor: pointer;
+	color: #6d7175;
+	font-size: 12px;
+	opacity: 0.7;
+}
+.em-order-copy:hover {
+	color: #2c6ecb;
+	opacity: 1;
+}
+
 /* Slide-out panel styles */
 .em-order-panel, .em-search-panel {
 	position: fixed;
@@ -72,7 +86,7 @@
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: 450px;
+	width: 550px;
 	max-width: 90vw;
 	background: #ffffff;
 	box-shadow: -2px 0 10px rgba(0,0,0,0.2);
