@@ -30,6 +30,12 @@ function initEverymarket(customer_emails, load, customer_id, user_email)
 			e.preventDefault();
 		});
 
+		// Order Details refresh (loads from Order Number custom field)
+		$(document).off('click', '.em-order-details-refresh-btn').on('click', '.em-order-details-refresh-btn', function(e) {
+			e.preventDefault();
+			emLoadOrderDetails();
+		});
+
 		// Panel event handlers
 		emInitPanelHandlers();
 		emInitSearchPanelHandlers();
@@ -90,6 +96,34 @@ function emLoadOrders()
 				emInitSearchPanelHandlers();
 			}
 		}, true
+	);
+}
+
+function emLoadOrderDetails()
+{
+	var contentEl = $('#em-order-details-content');
+	var loaderSrc = ($('img[src*="loader-tiny"]').first().attr('src')) || '/img/loader-tiny.gif';
+	contentEl.html('<img src="' + loaderSrc + '" />');
+
+	fsAjax({
+			action: 'order_details',
+			conversation_id: getGlobalAttr('conversation_id'),
+			mailbox_id: getGlobalAttr('mailbox_id')
+		},
+		laroute.route('everymarket.ajax'),
+		function(response) {
+			if (response.html) {
+				contentEl.html(response.html);
+			} else if (response.order && response.shop_url) {
+				$('#em-order-details-shop-url').val(response.shop_url);
+				var html = emBuildOrderDetailsHTML(response.order);
+				contentEl.html(html);
+				emInitPanelHandlers();
+			} else {
+				contentEl.html('<span class="text-help">' + (response.msg || 'No Order Found') + '</span>');
+			}
+		},
+		true
 	);
 }
 
@@ -462,7 +496,7 @@ function emCloseSearchPanel()
 function emBuildOrderDetailsHTML(order)
 {
 	var html = '';
-	var shop_url = $('#em-shop-url').val();
+	var shop_url = ($('#em-shop-url').val() || $('#em-order-details-shop-url').val() || '');
 	console.log(order)
 
 	// Line items (at top)
@@ -528,7 +562,7 @@ function emBuildOrderDetailsHTML(order)
 	html += '</div>';
 
 	// Order requests section
-	if (order.cs_requests.length > 0) {
+	if (order.cs_requests && order.cs_requests.length > 0) {
 		html += '<div class="em-detail-section">';
 		html += '<div class="em-detail-section-title">';
 		html += '<strong>CS Requests</strong>';

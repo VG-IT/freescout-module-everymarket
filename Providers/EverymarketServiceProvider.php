@@ -378,6 +378,58 @@ class EverymarketServiceProvider extends ServiceProvider
         return ['error' => '', 'data' => $orders ?? []];
     }
 
+    /**
+     * Retrieve a single order by order number from Everymarket API.
+     */
+    public static function apiGetOrderByNumber($order_number, $mailbox = null)
+    {
+        $response = ['error' => '', 'data' => null];
+
+        if (empty($order_number)) {
+            return $response;
+        }
+
+        $api_info = self::getApiInfo($mailbox);
+        $orders_url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders?q[number_eq]=' . urlencode($order_number) . '&q[state_eq]=complete&token=' . $api_info["access_token"];
+
+        $orders_result = self::makeEverymarketApiCall($orders_url);
+
+        if (!empty($orders_result['error'])) {
+            return ['error' => $orders_result['error'], 'data' => null];
+        }
+
+        $orders = $orders_result['data']['orders'] ?? [];
+        if (empty($orders)) {
+            // Fallback: try number_start in case number_eq is not supported
+            $orders_url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders?q[number_start]=' . urlencode($order_number) . '&q[state_eq]=complete&token=' . $api_info["access_token"];
+            $orders_result = self::makeEverymarketApiCall($orders_url);
+            $orders = $orders_result['data']['orders'] ?? [];
+        }
+
+        $order = null;
+        foreach ($orders as $o) {
+            if (isset($o['number']) && (string)$o['number'] === (string)$order_number) {
+                $order = $o;
+                break;
+            }
+        }
+        if (!$order && !empty($orders)) {
+            $order = $orders[0];
+        }
+
+        if ($order) {
+            $cs_requests_url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . $order['number'] . '/cs_requests?token=' . $api_info["access_token"];
+            $cs_requests_result = self::makeEverymarketApiCall($cs_requests_url);
+            if (empty($cs_requests_result['error'])) {
+                $order['cs_requests'] = $cs_requests_result['data'] ?? [];
+            } else {
+                $order['cs_requests'] = [];
+            }
+        }
+
+        return ['error' => '', 'data' => $order];
+    }
+
     public static function apiGetCustomers($search_input, $mailbox = null)
     {
         $response = [

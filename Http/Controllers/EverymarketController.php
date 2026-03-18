@@ -339,6 +339,75 @@ class EverymarketController extends Controller
                 
                 break;
 
+            case 'order_details':
+                $response['html'] = '';
+                $response['status'] = 'success';
+
+                $mailbox = null;
+                if ($request->mailbox_id) {
+                    $mailbox = Mailbox::find($request->mailbox_id);
+                }
+                $conversation_id = (int) ($request->conversation_id ?? 0);
+
+                if (!$conversation_id || !$mailbox) {
+                    $response['html'] = '<span class="text-help">' . __('No Order Found') . '</span>';
+                    break;
+                }
+
+                // Get Order Number from Custom Fields module: custom_fields + conversation_custom_field
+                $custom_field = \DB::table('custom_fields')
+                    ->where('mailbox_id', $mailbox->id)
+                    ->where('name', 'Order Number')
+                    ->first();
+
+                $order_number = null;
+                if ($custom_field) {
+                    // Custom Fields module: conversation_custom_field or conversation_custom_fields
+                    $ccf = \DB::table('conversation_custom_field')
+                        ->where('conversation_id', $conversation_id)
+                        ->where('custom_field_id', $custom_field->id)
+                        ->first();
+                    if (!$ccf && \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields')) {
+                        $ccf = \DB::table('conversation_custom_fields')
+                            ->where('conversation_id', $conversation_id)
+                            ->where('custom_field_id', $custom_field->id)
+                            ->first();
+                    }
+                    if ($ccf && !empty(trim($ccf->value ?? ''))) {
+                        $order_number = trim($ccf->value);
+                    }
+                }
+
+                if (empty($order_number)) {
+                    $response['html'] = '<span class="text-help">' . __('No Order Found') . '</span>';
+                    break;
+                }
+
+                $mailbox_api_enabled = \Everymarket::isMailboxApiEnabled($mailbox);
+                if (!\Everymarket::isApiEnabled() && !$mailbox_api_enabled) {
+                    $response['html'] = '<span class="text-help">' . __('API is not enabled') . '</span>';
+                    break;
+                }
+
+                $result = \Everymarket::apiGetOrderByNumber($order_number, $mailbox);
+
+                if (!empty($result['error'])) {
+                    $response['html'] = '<span class="text-danger">' . htmlspecialchars($result['error']) . '</span>';
+                    break;
+                }
+
+                if (empty($result['data'])) {
+                    $response['html'] = '<span class="text-help">' . __('No Order Found') . '</span>';
+                    break;
+                }
+
+                // Return order data for JavaScript to render (reuses emBuildOrderDetailsHTML)
+                $response['order'] = $result['data'];
+                $response['shop_url'] = $mailbox_api_enabled
+                    ? \Everymarket::getSanitizedShopDomain(\Everymarket::getMailboxEverymarketSettings($mailbox)['shop_domain'] ?? '')
+                    : \Everymarket::getSanitizedShopDomain();
+                break;
+
             default:
                 $response['msg'] = 'Unknown action';
                 break;

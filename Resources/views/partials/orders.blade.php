@@ -3,6 +3,29 @@
         <div class="panel panel-default @if ($load) em-loading @endif" id="em-orders">
             @include('everymarket::partials/orders_list')
         </div>
+        {{-- Order Details section (loads from Order Number custom field on Refresh) --}}
+        <div class="panel panel-default" id="em-order-details">
+            <div class="panel-heading">
+                <h4 class="panel-title">
+                    <a data-toggle="collapse" href=".em-collapse-order-details">
+                        {{ __("Order Details") }}
+                        <b class="caret"></b>
+                    </a>
+                </h4>
+            </div>
+            <div class="em-collapse-order-details panel-collapse collapse in">
+                <div class="panel-body">
+                    <div class="sidebar-block-header2"><strong>{{ __("Order Details") }}</strong> (<a data-toggle="collapse" href=".em-collapse-order-details">{{ __('close') }}</a>)</div>
+                    <div class="margin-top-10 em-order-details-refresh small">
+                        <a href="#" class="sidebar-block-link em-order-details-refresh-btn"><i class="glyphicon glyphicon-refresh"></i> {{ __("Refresh") }}</a>
+                    </div>
+                    <input type="hidden" id="em-order-details-shop-url" value="" />
+                    <div id="em-order-details-content" class="em-order-details-content margin-top-10">
+                        <span class="text-help">{{ __("Click Refresh to load order from Order Number custom field") }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
