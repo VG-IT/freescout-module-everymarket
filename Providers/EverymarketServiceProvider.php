@@ -293,8 +293,21 @@ class EverymarketServiceProvider extends ServiceProvider
         });
 
         \Eventy::addAction('conversations_table.th_before_conv_number', function() {
-            echo '<th class="conv-priority">' . __('Priority') . '</th>';
-            echo '<th class="conv-order-number">' . __('Order Number') . '</th>';
+            $sorting = \App\Conversation::getConvTableSorting();
+            echo '<th class="conv-priority">';
+            echo '<span class="conv-col-sort" data-sort-by="priority" data-order="' . ($sorting['sort_by'] == 'priority' ? $sorting['order'] : 'asc') . '">';
+            echo __('Priority');
+            if ($sorting['sort_by'] == 'priority' && $sorting['order'] == 'desc') echo '↑';
+            if ($sorting['sort_by'] == 'priority' && $sorting['order'] == 'asc') echo '↓';
+            echo '</span>';
+            echo '</th>';
+            echo '<th class="conv-order-number">';
+            echo '<span class="conv-col-sort" data-sort-by="order_number" data-order="' . ($sorting['sort_by'] == 'order_number' ? $sorting['order'] : 'asc') . '">';
+            echo __('Order Number');
+            if ($sorting['sort_by'] == 'order_number' && $sorting['order'] == 'desc') echo '↑';
+            if ($sorting['sort_by'] == 'order_number' && $sorting['order'] == 'asc') echo '↓';
+            echo '</span>';
+            echo '</th>';
         });
 
         \Eventy::addAction('conversations_table.td_before_conv_number', function($conversation) {
@@ -306,6 +319,65 @@ class EverymarketServiceProvider extends ServiceProvider
         \Eventy::addFilter('conversations_table.col_counter', function($count) {
             return $count + 2;
         });
+
+        // Allow sorting by Priority and Order Number
+        \Eventy::addFilter('conversations.table_sorting', function($result) {
+            $request = request();
+            if (!empty($request->sorting['sort_by']) && !empty($request->sorting['order']) &&
+                in_array($request->sorting['sort_by'], ['priority', 'order_number']) &&
+                in_array($request->sorting['order'], ['asc', 'desc'])) {
+                $result['sort_by'] = $request->sorting['sort_by'];
+                $result['order'] = $request->sorting['order'];
+            }
+            return $result;
+        });
+
+        // Add join and orderBy for custom field sorting; skip invalid orderBy in default loop
+        \Eventy::addFilter('folder.conversations_query', function($query, $folder, $user_id) {
+            return self::applyCustomFieldSorting($query, $folder);
+        }, 20, 3);
+
+        \Eventy::addFilter('folder.conversations_order_by_array', function($order_bys, $folder) {
+            $sorting = \App\Conversation::getConvTableSorting();
+            if (in_array($sorting['sort_by'], ['priority', 'order_number'])) {
+                return []; // Already applied in folder.conversations_query
+            }
+            return $order_bys;
+        }, 20, 2);
+    }
+
+    /**
+     * Add join and orderBy for Priority/Order Number custom field sorting.
+     */
+    protected static function applyCustomFieldSorting($query, $folder)
+    {
+        $sorting = \App\Conversation::getConvTableSorting();
+        if (!in_array($sorting['sort_by'], ['priority', 'order_number'])) {
+            return $query;
+        }
+        if (!\Illuminate\Support\Facades\Schema::hasTable('custom_fields')) {
+            return $query;
+        }
+        $ccfTable = \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_field')
+            ? 'conversation_custom_field'
+            : (\Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
+        if (!$ccfTable || !$folder->mailbox_id) {
+            return $query;
+        }
+        $cf = \DB::table('custom_fields')
+            ->where('mailbox_id', $folder->mailbox_id)
+            ->where('name', $sorting['sort_by'] === 'priority' ? 'Priority' : 'Order Number')
+            ->first();
+        if (!$cf) {
+            return $query;
+        }
+        $alias = 'em_cf_' . $sorting['sort_by'];
+        $query->leftJoin($ccfTable . ' as ' . $alias, function($join) use ($alias, $cf) {
+            $join->on('conversations.id', '=', $alias . '.conversation_id')
+                 ->where($alias . '.custom_field_id', '=', $cf->id);
+        });
+        $query->orderBy($alias . '.value', $sorting['order']);
+        return $query;
     }
 
     /**
