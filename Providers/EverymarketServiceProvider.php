@@ -282,6 +282,138 @@ class EverymarketServiceProvider extends ServiceProvider
 
         }, 12, 3);
 
+        // Priority and Order Number columns in conversation list (after Assigned To)
+        \Eventy::addFilter('conversations_table.preload_table_data', function($conversations) {
+            return self::preloadConversationCustomFields($conversations);
+        });
+
+        \Eventy::addAction('conversations_table.col_before_conv_number', function() {
+            echo '<col class="conv-priority">';
+            echo '<col class="conv-order-number">';
+        });
+
+        \Eventy::addAction('conversations_table.th_before_conv_number', function() {
+            echo '<th class="conv-priority">' . __('Priority') . '</th>';
+            echo '<th class="conv-order-number">' . __('Order Number') . '</th>';
+        });
+
+        \Eventy::addAction('conversations_table.td_before_conv_number', function($conversation) {
+            $values = self::getConversationCustomFieldValues($conversation);
+            echo '<td class="conv-priority">' . e($values['priority']) . '</td>';
+            echo '<td class="conv-order-number">' . e($values['order_number']) . '</td>';
+        }, 20, 1);
+
+        \Eventy::addFilter('conversations_table.col_counter', function($count) {
+            return $count + 2;
+        });
+    }
+
+    /**
+     * Preload Priority and Order Number custom field values for conversations table.
+     */
+    protected static function preloadConversationCustomFields($conversations)
+    {
+        if (!$conversations || $conversations->isEmpty()) {
+            return $conversations;
+        }
+        if (!\Illuminate\Support\Facades\Schema::hasTable('custom_fields')) {
+            return $conversations;
+        }
+        $ccfTable = \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_field')
+            ? 'conversation_custom_field'
+            : (\Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
+        if (!$ccfTable) {
+            return $conversations;
+        }
+        $convIds = $conversations->pluck('id')->toArray();
+        $cache = array_fill_keys($convIds, ['priority' => '', 'order_number' => '']);
+        $mailboxIds = $conversations->pluck('mailbox_id')->unique()->filter()->values();
+        $customFields = \DB::table('custom_fields')
+            ->whereIn('mailbox_id', $mailboxIds)
+            ->whereIn('name', ['Priority', 'Order Number'])
+            ->get()
+            ->groupBy('mailbox_id');
+        foreach ($mailboxIds as $mailboxId) {
+            $cfs = $customFields->get($mailboxId, collect());
+            $cfByName = $cfs->keyBy('name');
+            $priorityCf = $cfByName->get('Priority');
+            $orderNumberCf = $cfByName->get('Order Number');
+            if (!$priorityCf && !$orderNumberCf) {
+                continue;
+            }
+            $cfIds = array_filter([$priorityCf->id ?? null, $orderNumberCf->id ?? null]);
+            if (empty($cfIds)) {
+                continue;
+            }
+            $convIdsForMailbox = $conversations->where('mailbox_id', $mailboxId)->pluck('id')->toArray();
+            if (empty($convIdsForMailbox)) {
+                continue;
+            }
+            $rows = \DB::table($ccfTable)
+                ->whereIn('conversation_id', $convIdsForMailbox)
+                ->whereIn('custom_field_id', $cfIds)
+                ->get();
+            foreach ($rows as $row) {
+                $convId = $row->conversation_id;
+                if (!isset($cache[$convId])) {
+                    $cache[$convId] = ['priority' => '', 'order_number' => ''];
+                }
+                $val = trim((string) ($row->value ?? ''));
+                if ($priorityCf && $row->custom_field_id == $priorityCf->id) {
+                    $cache[$convId]['priority'] = $val;
+                }
+                if ($orderNumberCf && $row->custom_field_id == $orderNumberCf->id) {
+                    $cache[$convId]['order_number'] = $val;
+                }
+            }
+        }
+        self::$convCustomFieldsCache = $cache;
+        return $conversations;
+    }
+
+    protected static $convCustomFieldsCache = [];
+
+    /**
+     * Get Priority and Order Number for a conversation (from preloaded cache or fallback).
+     */
+    protected static function getConversationCustomFieldValues($conversation)
+    {
+        $convId = $conversation->id;
+        if (isset(self::$convCustomFieldsCache[$convId])) {
+            return self::$convCustomFieldsCache[$convId];
+        }
+        $priority = '';
+        $orderNumber = '';
+        if (\Illuminate\Support\Facades\Schema::hasTable('custom_fields')) {
+            $ccfTable = \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_field')
+                ? 'conversation_custom_field'
+                : (\Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
+            if ($ccfTable && $conversation->mailbox_id) {
+                foreach (['Priority', 'Order Number'] as $name) {
+                    $cf = \DB::table('custom_fields')
+                        ->where('mailbox_id', $conversation->mailbox_id)
+                        ->where('name', $name)
+                        ->first();
+                    if ($cf) {
+                        $ccf = \DB::table($ccfTable)
+                            ->where('conversation_id', $convId)
+                            ->where('custom_field_id', $cf->id)
+                            ->first();
+                        $val = $ccf ? trim($ccf->value ?? '') : '';
+                        if ($name === 'Priority') {
+                            $priority = $val;
+                        } else {
+                            $orderNumber = $val;
+                        }
+                    }
+                }
+            }
+        }
+        if ($priority === '' && $orderNumber === '') {
+            $priority = $conversation->getMeta('custom_fields.priority', '');
+            $orderNumber = $conversation->getMeta('custom_fields.order_number', '');
+        }
+        return ['priority' => $priority, 'order_number' => $orderNumber];
     }
 
     public static function isApiEnabled()

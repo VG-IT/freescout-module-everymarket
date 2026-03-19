@@ -369,3 +369,14 @@
 	color: #202223;
 	font-weight: 500;
 }
+
+/* Conversation list: Priority and Order Number columns */
+.table-conversations .conv-priority {
+	width: 80px;
+	min-width: 80px;
+}
+
+.table-conversations .conv-order-number {
+	width: 100px;
+	min-width: 100px;
+}
