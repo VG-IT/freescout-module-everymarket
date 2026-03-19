@@ -351,33 +351,45 @@ class EverymarketServiceProvider extends ServiceProvider
      */
     protected static function applyCustomFieldSorting($query, $folder)
     {
-        $sorting = \App\Conversation::getConvTableSorting();
-        if (!in_array($sorting['sort_by'], ['priority', 'order_number'])) {
+        try {
+            if (!$folder || !$folder->mailbox_id) {
+                return $query;
+            }
+            $sorting = \App\Conversation::getConvTableSorting();
+            if (!in_array($sorting['sort_by'], ['priority', 'order_number'])) {
+                return $query;
+            }
+            if (!\Illuminate\Support\Facades\Schema::hasTable('custom_fields')) {
+                $query->orderBy('conversations.id', 'asc');
+                return $query;
+            }
+            $ccfTable = \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_field')
+                ? 'conversation_custom_field'
+                : (\Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
+            if (!$ccfTable || !$folder->mailbox_id) {
+                $query->orderBy('conversations.id', 'asc');
+                return $query;
+            }
+            $cf = \DB::table('custom_fields')
+                ->where('mailbox_id', $folder->mailbox_id)
+                ->where('name', $sorting['sort_by'] === 'priority' ? 'Priority' : 'Order Number')
+                ->first();
+            if (!$cf) {
+                $query->orderBy('conversations.id', 'asc');
+                return $query;
+            }
+            $alias = 'em_cf_' . $sorting['sort_by'];
+            $query->leftJoin($ccfTable . ' as ' . $alias, function($join) use ($alias, $cf) {
+                $join->on('conversations.id', '=', $alias . '.conversation_id')
+                     ->where($alias . '.custom_field_id', '=', $cf->id);
+            });
+            $query->orderBy($alias . '.value', $sorting['order']);
+            return $query;
+        } catch (\Throwable $e) {
+            \Log::warning('[Everymarket] applyCustomFieldSorting failed: ' . $e->getMessage());
+            $query->orderBy('conversations.id', 'asc');
             return $query;
         }
-        if (!\Illuminate\Support\Facades\Schema::hasTable('custom_fields')) {
-            return $query;
-        }
-        $ccfTable = \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_field')
-            ? 'conversation_custom_field'
-            : (\Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
-        if (!$ccfTable || !$folder->mailbox_id) {
-            return $query;
-        }
-        $cf = \DB::table('custom_fields')
-            ->where('mailbox_id', $folder->mailbox_id)
-            ->where('name', $sorting['sort_by'] === 'priority' ? 'Priority' : 'Order Number')
-            ->first();
-        if (!$cf) {
-            return $query;
-        }
-        $alias = 'em_cf_' . $sorting['sort_by'];
-        $query->leftJoin($ccfTable . ' as ' . $alias, function($join) use ($alias, $cf) {
-            $join->on('conversations.id', '=', $alias . '.conversation_id')
-                 ->where($alias . '.custom_field_id', '=', $cf->id);
-        });
-        $query->orderBy($alias . '.value', $sorting['order']);
-        return $query;
     }
 
     /**
