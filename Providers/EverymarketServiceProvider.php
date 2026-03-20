@@ -568,25 +568,18 @@ class EverymarketServiceProvider extends ServiceProvider
             return $current === $orderNumber;
         }
 
-        $now = now();
-        $payload = [
-            'value' => $orderNumber,
-            'updated_at' => $now,
-        ];
-
         try {
             if ($existing) {
                 \DB::table($ccfTable)
                     ->where('conversation_id', $conversation->id)
                     ->where('custom_field_id', $customField->id)
-                    ->update($payload);
+                    ->update(['value' => $orderNumber]);
             } else {
-                $insert = array_merge($payload, [
+                \DB::table($ccfTable)->insert([
                     'conversation_id' => $conversation->id,
                     'custom_field_id' => $customField->id,
-                    'created_at' => $now,
+                    'value' => $orderNumber,
                 ]);
-                \DB::table($ccfTable)->insert($insert);
             }
         } catch (\Throwable $e) {
             \Log::warning('[Everymarket] syncSingleOrderNumberCustomField failed: ' . $e->getMessage());
