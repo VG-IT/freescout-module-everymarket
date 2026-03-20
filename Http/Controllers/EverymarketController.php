@@ -120,6 +120,15 @@ class EverymarketController extends Controller
                             }
 
                             \Cache::put($cache_key, $orders, now()->addMinutes(60));
+
+                            // Single order → auto-set Order Number custom field if empty
+                            $conversation_id = (int) ($request->conversation_id ?? 0);
+                            if ($conversation_id && $mailbox) {
+                                $conv = Conversation::find($conversation_id);
+                                if ($conv && (int) $conv->mailbox_id === (int) $mailbox->id) {
+                                    \Everymarket::syncSingleOrderNumberCustomField($conv, $mailbox, $orders);
+                                }
+                            }
                             break;
                         }
                     }

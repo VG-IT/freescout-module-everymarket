@@ -246,7 +246,11 @@ class EverymarketServiceProvider extends ServiceProvider
             //     }
             // }
 
-            // Check if Order Number custom field has value (for auto-loading Order Details on page load)
+            // Single order in history + empty Order Number field → set it automatically
+            if (!empty($orders) && (\Everymarket::isApiEnabled() || self::isMailboxApiEnabled($mailbox))) {
+                self::syncSingleOrderNumberCustomField($conversation, $mailbox, $orders);
+            }
+
             $load_order_details_on_load = false;
             if (\Everymarket::isApiEnabled() || self::isMailboxApiEnabled($mailbox)) {
                 $custom_field = \DB::table('custom_fields')
@@ -498,6 +502,105 @@ class EverymarketServiceProvider extends ServiceProvider
             $orderNumber = $conversation->getMeta('custom_fields.order_number', '');
         }
         return ['priority' => $priority, 'order_number' => $orderNumber];
+    }
+
+    /**
+     * If customer order history has exactly one distinct order number, set the
+     * "Order Number" custom field on the conversation (and meta) so Order Details can load.
+     * Does nothing if Order Number is already set (custom field or meta).
+     */
+    public static function syncSingleOrderNumberCustomField($conversation, $mailbox, array $orders)
+    {
+        if (!$conversation || !$mailbox || empty($orders)) {
+            return false;
+        }
+
+        if (!\Illuminate\Support\Facades\Schema::hasTable('custom_fields')) {
+            return false;
+        }
+
+        $unique = [];
+        foreach ($orders as $order) {
+            if (!is_array($order) || !isset($order['number'])) {
+                continue;
+            }
+            $n = trim((string) $order['number']);
+            if ($n !== '') {
+                $unique[$n] = true;
+            }
+        }
+
+        if (count($unique) !== 1) {
+            return false;
+        }
+
+        $orderNumberKeys = array_keys($unique);
+        $orderNumber = $orderNumberKeys[0];
+
+        $customField = \DB::table('custom_fields')
+            ->where('mailbox_id', $mailbox->id)
+            ->where('name', 'Order Number')
+            ->first();
+
+        if (!$customField) {
+            return false;
+        }
+
+        $ccfTable = \Illuminate\Support\Facades\Schema::hasTable('conversation_custom_field')
+            ? 'conversation_custom_field'
+            : (\Illuminate\Support\Facades\Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
+
+        if (!$ccfTable) {
+            return false;
+        }
+
+        $existing = \DB::table($ccfTable)
+            ->where('conversation_id', $conversation->id)
+            ->where('custom_field_id', $customField->id)
+            ->first();
+
+        $current = $existing ? trim((string) ($existing->value ?? '')) : '';
+        if ($current === '') {
+            $current = trim((string) $conversation->getMeta('custom_fields.order_number', ''));
+        }
+
+        if ($current !== '') {
+            return $current === $orderNumber;
+        }
+
+        $now = now();
+        $payload = [
+            'value' => $orderNumber,
+            'updated_at' => $now,
+        ];
+
+        try {
+            if ($existing) {
+                \DB::table($ccfTable)
+                    ->where('conversation_id', $conversation->id)
+                    ->where('custom_field_id', $customField->id)
+                    ->update($payload);
+            } else {
+                $insert = array_merge($payload, [
+                    'conversation_id' => $conversation->id,
+                    'custom_field_id' => $customField->id,
+                    'created_at' => $now,
+                ]);
+                \DB::table($ccfTable)->insert($insert);
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('[Everymarket] syncSingleOrderNumberCustomField failed: ' . $e->getMessage());
+            return false;
+        }
+
+        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'Order Number', $orderNumber);
+        $conversation->setMeta('custom_fields.order_number', $orderNumber, true);
+
+        if (isset(self::$convCustomFieldsCache[$conversation->id])) {
+            self::$convCustomFieldsCache[$conversation->id]['order_number'] = $orderNumber;
+        }
+
+        return true;
     }
 
     public static function isApiEnabled()

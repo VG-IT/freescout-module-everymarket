@@ -23,6 +23,8 @@ function initEverymarket(customer_emails, load, customer_id, user_email)
 			emLoadOrders();
 		} else {
 			emLoadOrdersData();
+			// Orders from cache; server already ran single-order sync on page render
+			emLoadOrderDetails();
 		}
 
 		$('.em-refresh').click(function(e) {
@@ -39,9 +41,6 @@ function initEverymarket(customer_emails, load, customer_id, user_email)
 		// Panel event handlers
 		emInitPanelHandlers();
 		emInitSearchPanelHandlers();
-
-		// Auto-load Order Details on page load (API returns "No Order Found" when Order Number custom field is empty)
-		setTimeout(function() { emLoadOrderDetails(); }, 500);
 	});
 }
 
@@ -59,7 +58,8 @@ function emLoadOrders()
 	fsAjax({
 			action: 'orders',
 			customer_emails: em_customer_emails,
-			mailbox_id: getGlobalAttr('mailbox_id')
+			mailbox_id: getGlobalAttr('mailbox_id'),
+			conversation_id: getGlobalAttr('conversation_id')
 		},
 		laroute.route('everymarket.ajax'),
 		function(response) {
@@ -79,6 +79,9 @@ function emLoadOrders()
 
 				// Re-init panel handlers for newly loaded content
 				emInitPanelHandlers();
+
+				// Server ran single-order sync; now load Order Details
+				emLoadOrderDetails();
 				
 				// If panel was open, refresh its content with updated data
 				if (panelWasOpen && currentOrderNumber) {
@@ -97,6 +100,8 @@ function emLoadOrders()
 			} else {
 				//showAjaxError(response);
 				emInitSearchPanelHandlers();
+				// Still load Order Details if custom field was already set
+				emLoadOrderDetails();
 			}
 		}, true
 	);
