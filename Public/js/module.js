@@ -80,6 +80,11 @@ function emLoadOrders()
 				// Re-init panel handlers for newly loaded content
 				emInitPanelHandlers();
 
+				// Single order → fill the custom field input if empty
+				if (em_orders_data.length === 1 && em_orders_data[0] && em_orders_data[0].number) {
+					emFillOrderNumberField(em_orders_data[0].number);
+				}
+
 				// Server ran single-order sync; now load Order Details
 				emLoadOrderDetails();
 				
@@ -127,12 +132,27 @@ function emLoadOrderDetails()
 				var html = emBuildOrderDetailsHTML(response.order);
 				contentEl.html(html);
 				emInitPanelHandlers();
+				emFillOrderNumberField(response.order.number);
 			} else {
 				contentEl.html('<span class="text-help">' + (response.msg || 'No Order Found') + '</span>');
 			}
 		},
 		true
 	);
+}
+
+function emFillOrderNumberField(orderNumber)
+{
+	if (!orderNumber) return;
+	$('#custom-fields-form .custom-field').each(function() {
+		var label = $.trim($(this).find('.text-help').first().text());
+		if (label === 'Order Number') {
+			var input = $(this).find('input[type="text"]');
+			if (input.length && !$.trim(input.val())) {
+				input.val(orderNumber).trigger('change');
+			}
+		}
+	});
 }
 
 function emLoadOrdersData()

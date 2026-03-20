@@ -2,6 +2,7 @@
 @media (min-width: 1100px) {
 	#conv-layout-customer {
 		width: 440px;
+		overflow-y: auto;
 	}
 	#conv-layout-header {
 		padding-right: 440px;
