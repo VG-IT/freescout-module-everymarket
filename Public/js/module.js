@@ -738,6 +738,16 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			if (item.variant.sku) {
 				html += '<div class="em-line-item-sku">SKU: ' + emEscapeHtml(item.variant.sku) + '</div>';
 			}
+
+			// Onway qty for this line item
+			var onwayInfo = emGetOnwayForLineItem(order, item.id);
+			if (onwayInfo) {
+				html += '<div class="em-line-item-sku" style="margin-top: 2px;">';
+				html += '<span style="color: #6d7175;">EC SKU: ' + emEscapeHtml(onwayInfo.ec_product_sku) + '</span>';
+				html += ' &nbsp; <span style="color: #108043; font-weight: 500;">Onway: ' + onwayInfo.onway_qty + '</span>';
+				html += ' &nbsp; <span style="color: #6d7175;">Sellable: ' + onwayInfo.sellable_qty + '</span>';
+				html += '</div>';
+			}
 			html += '</div>';
 
 			// Price
@@ -749,6 +759,53 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			html += '</div>';
 		}
 		html += '</div>';
+	}
+
+	// Inbound ASN tracking (from onway_items)
+	if (order.onway_items && order.onway_items.length > 0) {
+		var allPackages = [];
+		for (var oi = 0; oi < order.onway_items.length; oi++) {
+			var owItem = order.onway_items[oi];
+			if (owItem.packages && owItem.packages.length > 0) {
+				for (var pi = 0; pi < owItem.packages.length; pi++) {
+					var pkg = owItem.packages[pi];
+					if (!pkg.tracking_number) continue;
+					allPackages.push({
+						ec_sku: owItem.ec_product_sku || '',
+						tracking_number: pkg.tracking_number || '',
+						carrier: pkg.carrier || '',
+						status: pkg.receiving_status || '',
+						eta_date: pkg.eta_date || '',
+						quantity: pkg.quantity || 0,
+						received_quantity: pkg.received_quantity || 0
+					});
+				}
+			}
+		}
+		if (allPackages.length > 0) {
+			html += '<div class="em-detail-section">';
+			html += '<div class="em-detail-section-title">Inbound Shipments (ASN)</div>';
+			for (var ap = 0; ap < allPackages.length; ap++) {
+				var apkg = allPackages[ap];
+				html += '<div style="padding: 8px 0;' + (ap < allPackages.length - 1 ? ' border-bottom: 1px solid #f1f2f3;' : '') + '">';
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label">' + emEscapeHtml(apkg.carrier || 'Carrier N/A') + '</div>';
+				html += '<div class="em-detail-value">' + emEscapeHtml(apkg.status || 'N/A') + '</div>';
+				html += '</div>';
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number) + '</div>';
+				html += '<div class="em-detail-value" style="font-size: 11px; color: #6d7175;">EC SKU: ' + emEscapeHtml(apkg.ec_sku) + '</div>';
+				html += '</div>';
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label">Qty: ' + apkg.quantity + ' / Received: ' + apkg.received_quantity + '</div>';
+				if (apkg.eta_date) {
+					html += '<div class="em-detail-value">ETA: ' + emFormatDate(apkg.eta_date) + '</div>';
+				}
+				html += '</div>';
+				html += '</div>';
+			}
+			html += '</div>';
+		}
 	}
 
 	// Order details
@@ -973,6 +1030,17 @@ function emCapitalize(str)
 	return str.replace(/\b\w/g, function(char) {
 		return char.toUpperCase();
 	});
+}
+
+function emGetOnwayForLineItem(order, lineItemId)
+{
+	if (!order.onway_items || !order.onway_items.length) return null;
+	for (var i = 0; i < order.onway_items.length; i++) {
+		if (order.onway_items[i].line_item_id == lineItemId) {
+			return order.onway_items[i];
+		}
+	}
+	return null;
 }
 
 function emEscapeHtml(text)

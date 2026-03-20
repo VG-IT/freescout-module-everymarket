@@ -709,6 +709,10 @@ class EverymarketServiceProvider extends ServiceProvider
             if(empty($cs_requests_result['error'])) {
                 $order['cs_requests'] = $cs_requests_result['data'];
             }
+
+            $onway_result = self::apiGetOrderOnway($order['number'], $mailbox);
+            $order['onway_items'] = !empty($onway_result['data']) ? $onway_result['data'] : [];
+
             $orders[$key] = $order;
         }
 
@@ -762,9 +766,37 @@ class EverymarketServiceProvider extends ServiceProvider
             } else {
                 $order['cs_requests'] = [];
             }
+
+            // Fetch onway inventory + ASN tracking data
+            $onway_result = self::apiGetOrderOnway($order['number'], $mailbox);
+            $order['onway_items'] = !empty($onway_result['data']) ? $onway_result['data'] : [];
         }
 
         return ['error' => '', 'data' => $order];
+    }
+
+    /**
+     * Retrieve onway inventory and ASN tracking for an order's line items.
+     */
+    public static function apiGetOrderOnway($order_number, $mailbox = null)
+    {
+        $response = ['error' => '', 'data' => []];
+
+        if (empty($order_number)) {
+            return $response;
+        }
+
+        $api_info = self::getApiInfo($mailbox);
+        $url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . urlencode($order_number) . '/onway?token=' . $api_info["access_token"];
+
+        $result = self::makeEverymarketApiCall($url);
+
+        if (!empty($result['error'])) {
+            \Log::warning('[Everymarket] apiGetOrderOnway error: ' . $result['error']);
+            return ['error' => $result['error'], 'data' => []];
+        }
+
+        return ['error' => '', 'data' => $result['data'] ?? []];
     }
 
     public static function apiGetCustomers($search_input, $mailbox = null)
