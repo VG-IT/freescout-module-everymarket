@@ -808,6 +808,137 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 		}
 	}
 
+	// Shipments (per order item: carrier/tracking, eccang, shipstation, fulfill orders)
+	if (order.order_item_shipments && order.order_item_shipments.length > 0) {
+		html += '<div class="em-detail-section">';
+		html += '<div class="em-detail-section-title">Shipments</div>';
+		for (var si = 0; si < order.order_item_shipments.length; si++) {
+			var shipInfo = order.order_item_shipments[si];
+			var shipItemName = shipInfo.s_sku || ('Item #' + (si + 1));
+
+			// Find matching line item name
+			if (order.line_items && shipInfo.line_item_id) {
+				for (var li = 0; li < order.line_items.length; li++) {
+					if (order.line_items[li].id == shipInfo.line_item_id) {
+						shipItemName = (order.line_items[li].variant && order.line_items[li].variant.name)
+							? order.line_items[li].variant.name
+							: shipItemName;
+						break;
+					}
+				}
+			}
+
+			html += '<div style="padding: 10px 0;' + (si < order.order_item_shipments.length - 1 ? ' border-bottom: 1px solid #f1f2f3;' : '') + '">';
+
+			// Item header with status
+			html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">';
+			html += '<div style="font-weight: 600; font-size: 12px; color: #333;">' + emEscapeHtml(shipItemName) + '</div>';
+			if (shipInfo.status) {
+				html += '<div>' + emGetFulfillmentBadge(shipInfo.status) + '</div>';
+			}
+			html += '</div>';
+
+			// Carrier + tracking
+			if (shipInfo.s_tracking) {
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(shipInfo.s_carrier || 'Carrier') + '</div>';
+				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.s_tracking) + '</div>';
+				html += '</div>';
+			}
+
+			// International tracking
+			if (shipInfo.s_intl_forward && shipInfo.s_intl_tracking) {
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label" style="font-size: 12px;">Intl Tracking</div>';
+				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.s_intl_tracking) + '</div>';
+				html += '</div>';
+			}
+
+			// Shipping method
+			if (shipInfo.s_shipping_method) {
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label" style="font-size: 12px;">Method</div>';
+				html += '<div class="em-detail-value" style="font-size: 12px;">' + emEscapeHtml(shipInfo.s_shipping_method) + '</div>';
+				html += '</div>';
+			}
+
+			// Eccang shipments
+			if (shipInfo.eccang_shipments && shipInfo.eccang_shipments.length > 0) {
+				for (var ei = 0; ei < shipInfo.eccang_shipments.length; ei++) {
+					var eccang = shipInfo.eccang_shipments[ei];
+					html += '<div style="margin-top: 6px; padding: 8px; background-color: #f8f9fa; border-radius: 3px; border-left: 3px solid #95BF47;">';
+					html += '<div style="font-size: 11px; color: #999; margin-bottom: 4px;">Eccang Order</div>';
+					html += '<div class="em-detail-row" style="padding: 2px 0;">';
+					html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(eccang.order_code) + '</div>';
+					html += '<div class="em-detail-value">' + emGetFulfillmentBadge(eccang.status || '') + '</div>';
+					html += '</div>';
+					if (eccang.tracking_number) {
+						html += '<div class="em-detail-row" style="padding: 2px 0;">';
+						html += '<div class="em-detail-label" style="font-size: 12px;">Tracking</div>';
+						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(eccang.tracking_number) + '</div>';
+						html += '</div>';
+					}
+					if (eccang.items && eccang.items.length > 0) {
+						var itemsStr = eccang.items.map(function(item) {
+							return emEscapeHtml(item.product_sku) + ' (' + item.quantity + ')';
+						}).join(', ');
+						html += '<div style="font-size: 11px; color: #6d7175; margin-top: 2px;">Items: ' + itemsStr + '</div>';
+					}
+					html += '</div>';
+				}
+			}
+
+			// Shipstation
+			if (shipInfo.shipstation && shipInfo.shipstation.order_number) {
+				html += '<div style="margin-top: 6px; padding: 8px; background-color: #f8f9fa; border-radius: 3px; border-left: 3px solid #5bc0de;">';
+				html += '<div style="font-size: 11px; color: #999; margin-bottom: 4px;">Shipstation</div>';
+				html += '<div class="em-detail-row" style="padding: 2px 0;">';
+				html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(shipInfo.shipstation.order_number) + '</div>';
+				if (shipInfo.shipstation.tracking_number) {
+					html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.shipstation.tracking_number) + '</div>';
+				} else {
+					html += '<div class="em-detail-value" style="font-size: 11px; color: #999;">No Shipment</div>';
+				}
+				html += '</div>';
+				html += '</div>';
+			}
+
+			// Fulfill orders (STC / direct purchase)
+			if (shipInfo.fulfill_orders && shipInfo.fulfill_orders.length > 0) {
+				for (var fi = 0; fi < shipInfo.fulfill_orders.length; fi++) {
+					var fo = shipInfo.fulfill_orders[fi];
+					var foLabel = fo.stc ? 'STC Fulfill' : 'Fulfill Order';
+					html += '<div style="margin-top: 6px; padding: 8px; background-color: #f8f9fa; border-radius: 3px; border-left: 3px solid #f0ad4e;">';
+					html += '<div style="font-size: 11px; color: #999; margin-bottom: 4px;">' + foLabel + '</div>';
+					if (fo.buy_tracking) {
+						html += '<div class="em-detail-row" style="padding: 2px 0;">';
+						html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(fo.buy_carrier || 'Carrier') + '</div>';
+						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(fo.buy_tracking) + '</div>';
+						html += '</div>';
+					}
+					if (fo.forward_tracking) {
+						html += '<div class="em-detail-row" style="padding: 2px 0;">';
+						html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(fo.forward_carrier || 'Forward') + '</div>';
+						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(fo.forward_tracking) + '</div>';
+						html += '</div>';
+					}
+					if (fo.buy_order_number) {
+						html += '<div style="font-size: 11px; color: #6d7175; margin-top: 2px;">Order: ' + emEscapeHtml(fo.buy_order_number) + '</div>';
+					}
+					html += '</div>';
+				}
+			}
+
+			// No shipment info at all
+			if (!shipInfo.s_tracking && (!shipInfo.eccang_shipments || shipInfo.eccang_shipments.length === 0) && !shipInfo.shipstation && (!shipInfo.fulfill_orders || shipInfo.fulfill_orders.length === 0)) {
+				html += '<div style="font-size: 12px; color: #999;">Tracking unavailable</div>';
+			}
+
+			html += '</div>';
+		}
+		html += '</div>';
+	}
+
 	// Order details
 	html += '<div class="em-detail-section">';
 	html += '<div class="em-detail-section-title">Order Details</div>';
