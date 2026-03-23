@@ -768,9 +768,8 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			var owItem = order.onway_items[oi];
 			if (owItem.packages && owItem.packages.length > 0) {
 				for (var pi = 0; pi < owItem.packages.length; pi++) {
-					var pkg = owItem.packages[pi];
-					if (!pkg.tracking_number) continue;
-					allPackages.push({
+				var pkg = owItem.packages[pi];
+				allPackages.push({
 						ec_sku: owItem.ec_product_sku || '',
 						tracking_number: pkg.tracking_number || '',
 						carrier: pkg.carrier || '',
