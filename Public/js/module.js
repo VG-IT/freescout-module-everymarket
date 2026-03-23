@@ -768,15 +768,23 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			var owItem = order.onway_items[oi];
 			if (owItem.packages && owItem.packages.length > 0) {
 				for (var pi = 0; pi < owItem.packages.length; pi++) {
-				var pkg = owItem.packages[pi];
-				allPackages.push({
+					var pkg = owItem.packages[pi];
+					allPackages.push({
 						ec_sku: owItem.ec_product_sku || '',
 						tracking_number: pkg.tracking_number || '',
 						carrier: pkg.carrier || '',
 						status: pkg.receiving_status || '',
+						receiving_code: pkg.receiving_code || '',
+						warehouse_code: pkg.warehouse_code || '',
 						eta_date: pkg.eta_date || '',
+						received_at: pkg.received_at || '',
+						warehouse_receiving_time: pkg.warehouse_receiving_time || '',
+						warehouse_receiving_complete_time: pkg.warehouse_receiving_complete_time || '',
+						warehouse_shelf_time: pkg.warehouse_shelf_time || '',
 						quantity: pkg.quantity || 0,
-						received_quantity: pkg.received_quantity || 0
+						received_quantity: pkg.received_quantity || 0,
+						putaway_qty: pkg.putaway_qty || 0,
+						sent_qty: pkg.sent_qty || 0
 					});
 				}
 			}
@@ -786,21 +794,55 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			html += '<div class="em-detail-section-title">Inbound Shipments (ASN)</div>';
 			for (var ap = 0; ap < allPackages.length; ap++) {
 				var apkg = allPackages[ap];
-				html += '<div style="padding: 8px 0;' + (ap < allPackages.length - 1 ? ' border-bottom: 1px solid #f1f2f3;' : '') + '">';
+				html += '<div style="padding: 8px 0;' + (ap < allPackages.length - 1 ? ' border-bottom: 1px solid #eee;' : '') + '">';
+
+				// Row 1: ASN code + status badge
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
-				html += '<div class="em-detail-label">' + emEscapeHtml(apkg.carrier || 'Carrier N/A') + '</div>';
-				html += '<div class="em-detail-value">' + emEscapeHtml(apkg.status || 'N/A') + '</div>';
+				html += '<div class="em-detail-label" style="font-size: 12px; font-weight: 600;">' + emEscapeHtml(apkg.receiving_code || 'ASN') + '</div>';
+				html += '<div class="em-detail-value">' + emGetAsnStatusBadge(apkg.status) + '</div>';
 				html += '</div>';
+
+				// Row 2: Carrier + tracking
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
-				html += '<div class="em-detail-label" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number || 'N/A') + '</div>';
-				html += '<div class="em-detail-value" style="font-size: 11px; color: #6d7175;">EC SKU: ' + emEscapeHtml(apkg.ec_sku) + '</div>';
+				html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(apkg.carrier || 'Carrier N/A') + '</div>';
+				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number || 'N/A') + '</div>';
 				html += '</div>';
+
+				// Row 3: EC SKU + Warehouse
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
-				html += '<div class="em-detail-label">Qty: ' + apkg.quantity + ' / Received: ' + apkg.received_quantity + '</div>';
-				if (apkg.eta_date) {
-					html += '<div class="em-detail-value">ETA: ' + emFormatDate(apkg.eta_date) + '</div>';
+				html += '<div class="em-detail-label" style="font-size: 11px; color: #6d7175;">SKU: ' + emEscapeHtml(apkg.ec_sku) + '</div>';
+				if (apkg.warehouse_code) {
+					html += '<div class="em-detail-value" style="font-size: 11px; color: #6d7175;">WH: ' + emEscapeHtml(apkg.warehouse_code) + '</div>';
 				}
 				html += '</div>';
+
+				// Row 4: Quantity breakdown — Sent / Received / Putaway / Total
+				var inStock = apkg.received_quantity - apkg.sent_qty;
+				if (inStock < 0) inStock = 0;
+				html += '<div style="display: flex; gap: 8px; flex-wrap: wrap; padding: 4px 0; font-size: 11px;">';
+				html += '<span style="color: #637381;">Sent: <b>' + apkg.quantity + '</b></span>';
+				html += '<span style="color: #637381;">Rcvd: <b>' + apkg.received_quantity + '</b></span>';
+				html += '<span style="color: #637381;">Shelved: <b>' + apkg.putaway_qty + '</b></span>';
+				html += '<span style="color: ' + (apkg.sent_qty > 0 ? '#bf0711' : '#637381') + ';">Shipped Out: <b>' + apkg.sent_qty + '</b></span>';
+				html += '<span style="color: ' + (inStock > 0 ? '#108043' : '#637381') + ';">In Stock: <b>' + inStock + '</b></span>';
+				html += '</div>';
+
+				// Row 5: Timeline dates
+				html += '<div style="font-size: 11px; color: #637381; padding: 2px 0;">';
+				if (apkg.eta_date) {
+					html += '<div>ETA: ' + emFormatDate(apkg.eta_date) + '</div>';
+				}
+				if (apkg.warehouse_receiving_time) {
+					html += '<div>WH Receiving: ' + emFormatDate(apkg.warehouse_receiving_time) + '</div>';
+				}
+				if (apkg.warehouse_receiving_complete_time) {
+					html += '<div>WH Received: ' + emFormatDate(apkg.warehouse_receiving_complete_time) + '</div>';
+				}
+				if (apkg.warehouse_shelf_time) {
+					html += '<div>Shelved: ' + emFormatDate(apkg.warehouse_shelf_time) + '</div>';
+				}
+				html += '</div>';
+
 				html += '</div>';
 			}
 			html += '</div>';
@@ -1061,6 +1103,19 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 	html += '</div>';
 
 	return html;
+}
+
+function emGetAsnStatusBadge(status)
+{
+	if (!status) return '<span class="em-status-badge em-status-unfulfilled">Unknown</span>';
+	var s = status.toLowerCase();
+	var statusClass = 'em-status-unfulfilled';
+	if (s === 'received' || s === 'shelved' || s === 'completed') {
+		statusClass = 'em-status-fulfilled';
+	} else if (s === 'in transit' || s === 'in_transit' || s === 'shipped' || s === 'receiving') {
+		statusClass = 'em-status-partial';
+	}
+	return '<span class="em-status-badge ' + statusClass + '">' + emCapitalize(s.replace(/_/g, ' ')) + '</span>';
 }
 
 function emGetFulfillmentBadge(status)
