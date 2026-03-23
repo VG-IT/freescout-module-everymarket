@@ -792,7 +792,7 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 				html += '<div class="em-detail-value">' + emEscapeHtml(apkg.status || 'N/A') + '</div>';
 				html += '</div>';
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
-				html += '<div class="em-detail-label" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number) + '</div>';
+				html += '<div class="em-detail-label" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number || 'N/A') + '</div>';
 				html += '<div class="em-detail-value" style="font-size: 11px; color: #6d7175;">EC SKU: ' + emEscapeHtml(apkg.ec_sku) + '</div>';
 				html += '</div>';
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
