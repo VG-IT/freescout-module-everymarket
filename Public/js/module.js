@@ -168,8 +168,103 @@ function emLoadOrdersData()
 	}
 }
 
+/**
+ * Append an uploaded file link to a CS request note textarea (synced to remote in note text).
+ */
+function emCsNoteAppendFileLink(textarea, fileName, url) {
+	var $ta = $(textarea);
+	var cur = $ta.val() || '';
+	var line = fileName + ': ' + url;
+	if (cur.length && !/\n$/.test(cur)) {
+		cur += '\n';
+	}
+	$ta.val(cur + line + '\n');
+}
+
+/**
+ * Upload one file to FreeScout attachment storage; on success append URL to note.
+ */
+function emUploadCsNoteFile(file, textarea, statusEl, onComplete) {
+	if (!file || typeof file.type === 'undefined') {
+		if (onComplete) {
+			onComplete(false);
+		}
+		return;
+	}
+	ajaxSetup();
+	var data = new FormData();
+	data.append('file', file);
+	data.append('attach', '1');
+
+	$.ajax({
+		url: laroute.route('conversations.upload'),
+		data: data,
+		cache: false,
+		contentType: false,
+		processData: false,
+		type: 'POST',
+		success: function(response) {
+			if (typeof response.url === 'undefined' || !response.url
+				|| typeof response.status === 'undefined' || response.status !== 'success') {
+				if (typeof showFloatingAlert === 'function') {
+					showFloatingAlert('error', (response && response.msg) ? response.msg : 'Upload failed');
+				}
+				if (onComplete) {
+					onComplete(false);
+				}
+				return;
+			}
+			emCsNoteAppendFileLink(textarea, file.name, response.url);
+			if (onComplete) {
+				onComplete(true);
+			}
+		},
+		error: function() {
+			if (typeof showFloatingAlert === 'function') {
+				showFloatingAlert('error', typeof Lang !== 'undefined' ? Lang.get('messages.ajax_error') : 'Upload failed');
+			}
+			if (onComplete) {
+				onComplete(false);
+			}
+		}
+	});
+}
+
+function emUploadCsNoteFilesQueue(files, index, textarea, statusEl) {
+	if (!files || !files.length) {
+		return;
+	}
+	if (index >= files.length) {
+		$(statusEl).text('');
+		return;
+	}
+	var file = files[index];
+	$(statusEl).text('Uploading ' + (index + 1) + '/' + files.length + ': ' + file.name + '…');
+	emUploadCsNoteFile(file, textarea, statusEl, function() {
+		emUploadCsNoteFilesQueue(files, index + 1, textarea, statusEl);
+	});
+}
+
 function emInitPanelHandlers()
 {
+	// CS request note: attach files → upload to FreeScout, append URLs to textarea
+	$(document).off('change', '.em-cs-note-file-input').on('change', '.em-cs-note-file-input', function() {
+		var input = this;
+		var files = input.files;
+		if (!files || !files.length) {
+			return;
+		}
+		var form = $(input).closest('form');
+		var textarea = form.find('textarea[name="note"]')[0];
+		var statusEl = form.find('.em-cs-note-upload-status');
+		if (!textarea) {
+			$(input).val('');
+			return;
+		}
+		emUploadCsNoteFilesQueue(files, 0, textarea, statusEl);
+		$(input).val('');
+	});
+
 	// Click handler for order items
 	$(document).off('click', '.em-order-item').on('click', '.em-order-item', function(e) {
 		e.preventDefault();
@@ -652,6 +747,11 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 					html += '<label style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 6px; display: block;">Add Note</label>';
 					html += '<textarea name="note" class="form-control" rows="3" placeholder="Enter your note..." style="font-size: 12px; resize: vertical;" required></textarea>';
 					html += '</div>';
+					html += '<div class="form-group" style="margin-bottom: 10px;">';
+					html += '<label style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 4px; display: block;">Attach files (optional)</label>';
+					html += '<input type="file" class="em-cs-note-file-input" multiple style="font-size: 12px;" />';
+					html += '<span class="em-cs-note-upload-status" style="font-size: 11px; color: #999; display: block; margin-top: 4px;"></span>';
+					html += '</div>';
 					html += '<div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 10px;">';
 					html += '<button type="submit" class="btn btn-primary btn-sm" style="font-size: 12px;">';
 					html += '<i class="glyphicon glyphicon-comment" style="margin-right: 5px;"></i>Add Note';
@@ -706,6 +806,11 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 		html += '<div class="form-group" style="margin-bottom: 15px;">';
 		html += '<label for="cs_request_note" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Note</label>';
 		html += '<textarea id="cs_request_note" name="note" class="form-control" rows="4" placeholder="Enter your request details..." style="font-size: 13px; resize: vertical;" required></textarea>';
+		html += '</div>';
+		html += '<div class="form-group" style="margin-bottom: 15px;">';
+		html += '<label style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 4px; display: block;">Attach files (optional)</label>';
+		html += '<input type="file" class="em-cs-note-file-input" multiple style="font-size: 13px;" />';
+		html += '<span class="em-cs-note-upload-status" style="font-size: 12px; color: #999; display: block; margin-top: 4px;"></span>';
 		html += '</div>';
 		html += '<div class="form-group" style="margin-bottom: 0;">';
 		html += '<button type="submit" class="btn btn-primary btn-sm" style="font-size: 13px;">';

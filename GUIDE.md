@@ -229,7 +229,38 @@ Click **Close Request** on an open CS request to finalize it. The conversation's
 
 ---
 
-## 6. Tags and Folders
+## 6. Assigning Conversations
+
+You can assign a conversation to a specific CS agent (including yourself) to take ownership of it. Assigned conversations appear in the agent's personal **My Conversations** folder, which is only visible to the owner.
+
+### How to Assign a Conversation
+
+1. Open the conversation.
+2. In the conversation header, click the **Assignee** dropdown (next to the status).
+3. Select the agent you want to assign the conversation to, or select yourself.
+4. The conversation now appears in that agent's **My Conversations** folder.
+
+### My Conversations Folder
+
+- Each agent has a private **My Conversations** folder in the left sidebar.
+- This folder **only shows conversations assigned to you** — other agents cannot see your assigned conversations in this folder.
+- Use this as your personal work queue to track conversations you are actively handling.
+
+### Unassigning
+
+- To remove an assignment, open the conversation and set the Assignee back to **Unassigned**.
+- The conversation will leave the agent's My Conversations folder and remain in the shared mailbox folders (e.g., Unassigned, All).
+
+### Best Practices
+
+- **Assign immediately** when you start working on a conversation so other agents know it's being handled and it doesn't get picked up twice.
+- **Combine with tags**: Assign the conversation to yourself and also tag it (e.g., `cancellation`, `tracking`) so it appears both in your personal queue and in the category folder for visibility.
+- **Reassign when needed**: If you need to hand off a conversation to another agent, simply change the assignee. The conversation moves to their My Conversations folder.
+- **Check your folder regularly**: Use My Conversations as your daily to-do list of open customer issues.
+
+---
+
+## 7. Tags and Folders
 
 FreeScout uses **tags** to categorize conversations and automatically route them into the corresponding **folders**. When you add a tag to a conversation, it appears in the matching folder so the right team member can pick it up.
 
