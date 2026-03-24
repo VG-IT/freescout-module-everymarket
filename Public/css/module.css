@@ -377,3 +377,11 @@
 	width: 10%;
 	min-width: 100px;
 }
+
+/* CS request note: Summernote in sidebar / order details */
+.em-detail-section .em-cs-note-editor + .note-editor {
+	max-width: 100%;
+}
+.em-detail-section .em-cs-note-editor + .note-editor .note-editable {
+	min-height: 80px;
+}

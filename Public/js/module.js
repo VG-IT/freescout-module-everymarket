@@ -169,23 +169,68 @@ function emLoadOrdersData()
 }
 
 /**
- * Append an HTML link to a CS request note textarea (filename as link text; synced to remote in note body).
+ * True if CS note HTML is empty (no text and no images).
  */
-function emCsNoteAppendFileLink(textarea, fileName, url) {
-	var $ta = $(textarea);
-	var cur = $ta.val() || '';
-	var safeUrl = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-	var line = '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + emEscapeHtml(fileName) + '</a>';
-	if (cur.length && !/\n$/.test(cur)) {
-		cur += '\n';
+function emCsNoteHtmlIsEmpty(html) {
+	if (!html) {
+		return true;
 	}
-	$ta.val(cur + line + '\n');
+	var text = $('<div>').html(html).text().replace(/\u00a0/g, ' ').trim();
+	if (text.length) {
+		return false;
+	}
+	return !/<img/i.test(html);
+}
+
+/** Sync Summernote content into the underlying textarea before read/submit. */
+function emCsNoteFieldSync($textarea) {
+	if ($textarea.data('summernote')) {
+		$textarea.val($textarea.summernote('code'));
+	}
+}
+
+/** Clear CS note field (Summernote or plain textarea). */
+function emCsNoteFieldReset($textarea) {
+	if ($textarea.data('summernote')) {
+		$textarea.summernote('code', '');
+	} else {
+		$textarea.val('');
+	}
 }
 
 /**
- * Upload one file to FreeScout attachment storage; on success append URL to note.
+ * Append uploaded file into CS note: Summernote gets rich content; plain textarea gets HTML string.
  */
-function emUploadCsNoteFile(file, textarea, statusEl, onComplete) {
+function emCsNoteAppendFileLink($ta, fileName, url, file) {
+	var safeUrl = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+	var anchor = '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + emEscapeHtml(fileName) + '</a>';
+	if ($ta.data('summernote')) {
+		var isImage = file && file.type && file.type.indexOf('image/') === 0;
+		if (isImage) {
+			$ta.summernote('insertImage', url, function($img) {
+				if ($img && $img.length && $img.parents('.note-editable').length) {
+					var w = $img.parents('.note-editable').first().width();
+					if (w && $img.width() > w - 40) {
+						$img.css('max-width', '100%');
+					}
+				}
+			});
+		} else {
+			$ta.summernote('pasteHTML', anchor + '<br>');
+		}
+	} else {
+		var cur = $ta.val() || '';
+		if (cur.length && !/\n$/.test(cur)) {
+			cur += '\n';
+		}
+		$ta.val(cur + anchor + '\n');
+	}
+}
+
+/**
+ * Upload one file to FreeScout attachment storage; on success append to note editor.
+ */
+function emUploadCsNoteFile(file, $noteField, statusEl, onComplete) {
 	if (!file || typeof file.type === 'undefined') {
 		if (onComplete) {
 			onComplete(false);
@@ -195,7 +240,8 @@ function emUploadCsNoteFile(file, textarea, statusEl, onComplete) {
 	ajaxSetup();
 	var data = new FormData();
 	data.append('file', file);
-	data.append('attach', '1');
+	var isImage = file.type.indexOf('image/') === 0;
+	data.append('attach', isImage ? '0' : '1');
 
 	$.ajax({
 		url: laroute.route('conversations.upload'),
@@ -215,7 +261,7 @@ function emUploadCsNoteFile(file, textarea, statusEl, onComplete) {
 				}
 				return;
 			}
-			emCsNoteAppendFileLink(textarea, file.name, response.url);
+			emCsNoteAppendFileLink($noteField, file.name, response.url, file);
 			if (onComplete) {
 				onComplete(true);
 			}
@@ -231,7 +277,7 @@ function emUploadCsNoteFile(file, textarea, statusEl, onComplete) {
 	});
 }
 
-function emUploadCsNoteFilesQueue(files, index, textarea, statusEl) {
+function emUploadCsNoteFilesQueue(files, index, $noteField, statusEl) {
 	if (!files || !files.length) {
 		return;
 	}
@@ -241,14 +287,56 @@ function emUploadCsNoteFilesQueue(files, index, textarea, statusEl) {
 	}
 	var file = files[index];
 	$(statusEl).text('Uploading ' + (index + 1) + '/' + files.length + ': ' + file.name + '…');
-	emUploadCsNoteFile(file, textarea, statusEl, function() {
-		emUploadCsNoteFilesQueue(files, index + 1, textarea, statusEl);
+	emUploadCsNoteFile(file, $noteField, statusEl, function() {
+		emUploadCsNoteFilesQueue(files, index + 1, $noteField, statusEl);
+	});
+}
+
+/**
+ * Turn CS note fields into Summernote (same stack as conversation reply).
+ */
+function emInitCsNoteEditors() {
+	if (typeof $.summernote === 'undefined') {
+		return;
+	}
+	$('#em-order-panel textarea.em-cs-note-editor, #em-order-details-content textarea.em-cs-note-editor').each(function() {
+		var $ta = $(this);
+		if ($ta.next('.note-editor').length) {
+			return;
+		}
+		$ta.summernote({
+			minHeight: 100,
+			dialogsInBody: true,
+			disableResizeEditor: true,
+			followingToolbar: false,
+			disableDragAndDrop: true,
+			placeholder: $ta.attr('placeholder') || '',
+			toolbar: [
+				['style', ['bold', 'italic', 'underline', 'color']],
+				['para', ['ul', 'ol']],
+				['insert', ['link', 'picture']],
+				['view', ['codeview']]
+			],
+			callbacks: {
+				onImageUpload: function(files) {
+					if (!files) {
+						return;
+					}
+					for (var i = 0; i < files.length; i++) {
+						emUploadCsNoteFile(files[i], $ta, null, null);
+					}
+				}
+			}
+		});
+		if (typeof fsFixEditorCodeSaving === 'function') {
+			fsFixEditorCodeSaving($ta);
+		}
 	});
 }
 
 function emInitPanelHandlers()
 {
-	// CS request note: attach files → upload to FreeScout, append URLs to textarea
+	// CS request note: attach files → upload to FreeScout, append to note editor
 	$(document).off('change', '.em-cs-note-file-input').on('change', '.em-cs-note-file-input', function() {
 		var input = this;
 		var files = input.files;
@@ -256,13 +344,13 @@ function emInitPanelHandlers()
 			return;
 		}
 		var form = $(input).closest('form');
-		var textarea = form.find('textarea[name="note"]')[0];
+		var $noteField = form.find('textarea[name="note"]');
 		var statusEl = form.find('.em-cs-note-upload-status');
-		if (!textarea) {
+		if (!$noteField.length) {
 			$(input).val('');
 			return;
 		}
-		emUploadCsNoteFilesQueue(files, 0, textarea, statusEl);
+		emUploadCsNoteFilesQueue(files, 0, $noteField, statusEl);
 		$(input).val('');
 	});
 
@@ -310,11 +398,13 @@ function emInitPanelHandlers()
 		var orderNumber = form.data('order-number');
 		var lineItemId = form.find('[name="line_item_id"]').val();
 		var reason = form.find('[name="reason"]').val();
-		var note = form.find('[name="note"]').val();
+		var $noteField = form.find('textarea[name="note"]');
+		emCsNoteFieldSync($noteField);
+		var note = $noteField.val();
 		var messageSpan = form.find('.em-form-message');
 		var submitBtn = form.find('button[type="submit"]');
 		
-		if (!lineItemId || !reason || !note) {
+		if (!lineItemId || !reason || emCsNoteHtmlIsEmpty(note)) {
 			messageSpan.text('Please fill in all fields').css('color', '#d9534f');
 			return;
 		}
@@ -344,6 +434,7 @@ function emInitPanelHandlers()
 			if (response.status === 'success') {
 				messageSpan.text('Request submitted successfully').css('color', '#5cb85c');
 				form[0].reset();
+				emCsNoteFieldReset(form.find('textarea[name="note"]'));
 				// Reload orders after a short delay
 				// Loading state will be removed when panel content is refreshed
 				setTimeout(function() {
@@ -374,11 +465,13 @@ function emInitPanelHandlers()
 		var form = $(this);
 		var orderRequestId = form.data('order-request-id');
 		var orderNumber = form.data('order-number');
-		var note = form.find('[name="note"]').val();
+		var $noteField = form.find('textarea[name="note"]');
+		emCsNoteFieldSync($noteField);
+		var note = $noteField.val();
 		var messageSpan = form.find('.em-form-message');
 		var submitBtn = form.find('button[type="submit"]');
 		
-		if (!orderRequestId || !note) {
+		if (!orderRequestId || emCsNoteHtmlIsEmpty(note)) {
 			messageSpan.text('Please enter a note').css('color', '#d9534f');
 			return;
 		}
@@ -408,6 +501,7 @@ function emInitPanelHandlers()
 			if (response.status === 'success') {
 				messageSpan.text('Note added successfully').css('color', '#5cb85c');
 				form[0].reset();
+				emCsNoteFieldReset(form.find('textarea[name="note"]'));
 				// Reload orders after a short delay
 				// Loading state will be removed when emShowOrderPanel is called
 				setTimeout(function() {
@@ -440,7 +534,9 @@ function emInitPanelHandlers()
 		var orderNumber = btn.data('order-number');
 		var form = btn.closest('.em-cs-request-event-form');
 		var messageSpan = form.find('.em-form-message');
-		var note = form.find('[name="note"]').val();
+		var $noteField = form.find('textarea[name="note"]');
+		emCsNoteFieldSync($noteField);
+		var note = $noteField.val();
 		
 		if (!orderRequestId || !orderNumber) {
 			messageSpan.text('Missing required data').css('color', '#d9534f');
@@ -476,6 +572,7 @@ function emInitPanelHandlers()
 			if (response.status === 'success') {
 				messageSpan.text('CS request closed successfully').css('color', '#5cb85c');
 				form[0].reset();
+				emCsNoteFieldReset(form.find('textarea[name="note"]'));
 				// Reload orders after a short delay
 				// Loading state will be removed when emShowOrderPanel is called
 				setTimeout(function() {
@@ -499,6 +596,8 @@ function emInitPanelHandlers()
 		}
 		);
 	});
+
+	emInitCsNoteEditors();
 }
 
 function emInitSearchPanelHandlers() 
@@ -600,6 +699,8 @@ function emShowOrderPanel(order)
 	$('#em-panel-body .em-events-loading').remove();
 	$('#em-panel-body .em-cs-requests-loading').remove();
 
+	emInitCsNoteEditors();
+
 	// Show panel
 	$('.navbar-static-top').css('z-index', 3);
 	$('#em-order-panel').addClass('active');
@@ -633,7 +734,6 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 	var html = '';
 	var shop_url = ($('#em-shop-url').val() || $('#em-order-details-shop-url').val() || '');
 	if (includeCsRequests === undefined) includeCsRequests = true;
-	console.log(order)
 
 	// CS Requests (at top) - only in Order Details section, not in Order History panel
 	if (includeCsRequests) {
@@ -746,7 +846,7 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 					html += '<form class="em-cs-request-event-form" data-order-request-id="' + (cs_request.request.id || '') + '" data-line-item-id="' + (cs_request.order_item_id || '') + '" data-order-number="' + (order.number || '') + '">';
 					html += '<div class="form-group" style="margin-bottom: 10px;">';
 					html += '<label style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 6px; display: block;">Add Note</label>';
-					html += '<textarea name="note" class="form-control" rows="3" placeholder="Enter your note..." style="font-size: 12px; resize: vertical;" required></textarea>';
+					html += '<textarea name="note" class="form-control em-cs-note-editor" rows="3" placeholder="Enter your note..." style="font-size: 12px; resize: vertical;"></textarea>';
 					html += '</div>';
 					html += '<div class="form-group" style="margin-bottom: 10px;">';
 					html += '<label style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 4px; display: block;">Attach files (optional)</label>';
@@ -806,7 +906,7 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 		html += '</div>';
 		html += '<div class="form-group" style="margin-bottom: 15px;">';
 		html += '<label for="cs_request_note" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Note</label>';
-		html += '<textarea id="cs_request_note" name="note" class="form-control" rows="4" placeholder="Enter your request details..." style="font-size: 13px; resize: vertical;" required></textarea>';
+		html += '<textarea id="cs_request_note" name="note" class="form-control em-cs-note-editor" rows="4" placeholder="Enter your request details..." style="font-size: 13px; resize: vertical;"></textarea>';
 		html += '</div>';
 		html += '<div class="form-group" style="margin-bottom: 15px;">';
 		html += '<label style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 4px; display: block;">Attach files (optional)</label>';
