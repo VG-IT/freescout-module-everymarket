@@ -199,25 +199,13 @@ function emCsNoteFieldReset($textarea) {
 }
 
 /**
- * Append uploaded file into CS note: Summernote gets rich content; plain textarea gets HTML string.
+ * Append uploaded file as a linked file name only (no image preview in Summernote).
  */
-function emCsNoteAppendFileLink($ta, fileName, url, file) {
+function emCsNoteAppendFileLink($ta, fileName, url) {
 	var safeUrl = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 	var anchor = '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + emEscapeHtml(fileName) + '</a>';
 	if ($ta.data('summernote')) {
-		var isImage = file && file.type && file.type.indexOf('image/') === 0;
-		if (isImage) {
-			$ta.summernote('insertImage', url, function($img) {
-				if ($img && $img.length && $img.parents('.note-editable').length) {
-					var w = $img.parents('.note-editable').first().width();
-					if (w && $img.width() > w - 40) {
-						$img.css('max-width', '100%');
-					}
-				}
-			});
-		} else {
-			$ta.summernote('pasteHTML', anchor + '<br>');
-		}
+		$ta.summernote('pasteHTML', anchor + '<br>');
 	} else {
 		var cur = $ta.val() || '';
 		if (cur.length && !/\n$/.test(cur)) {
@@ -240,8 +228,7 @@ function emUploadCsNoteFile(file, $noteField, statusEl, onComplete) {
 	ajaxSetup();
 	var data = new FormData();
 	data.append('file', file);
-	var isImage = file.type.indexOf('image/') === 0;
-	data.append('attach', isImage ? '0' : '1');
+	data.append('attach', '1');
 
 	$.ajax({
 		url: laroute.route('conversations.upload'),
@@ -261,7 +248,7 @@ function emUploadCsNoteFile(file, $noteField, statusEl, onComplete) {
 				}
 				return;
 			}
-			emCsNoteAppendFileLink($noteField, file.name, response.url, file);
+			emCsNoteAppendFileLink($noteField, file.name, response.url);
 			if (onComplete) {
 				onComplete(true);
 			}
