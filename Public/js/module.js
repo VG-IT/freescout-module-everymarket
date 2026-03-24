@@ -169,12 +169,13 @@ function emLoadOrdersData()
 }
 
 /**
- * Append an uploaded file link to a CS request note textarea (synced to remote in note text).
+ * Append an HTML link to a CS request note textarea (filename as link text; synced to remote in note body).
  */
 function emCsNoteAppendFileLink(textarea, fileName, url) {
 	var $ta = $(textarea);
 	var cur = $ta.val() || '';
-	var line = fileName + ': ' + url;
+	var safeUrl = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+	var line = '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + emEscapeHtml(fileName) + '</a>';
 	if (cur.length && !/\n$/.test(cur)) {
 		cur += '\n';
 	}
