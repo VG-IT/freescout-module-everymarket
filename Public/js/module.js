@@ -280,6 +280,38 @@ function emUploadCsNoteFilesQueue(files, index, $noteField, statusEl) {
 }
 
 /**
+ * Summernote toolbar: attach files (same pattern as main reply EditorAttachmentButton).
+ */
+function emCsNoteAttachmentButton(context) {
+	var ui = $.summernote.ui;
+	var attachTooltip = (typeof Lang !== 'undefined' && Lang.get)
+		? Lang.get('messages.upload_attachments')
+		: 'Attach files';
+
+	return ui.button({
+		contents: '<i class="glyphicon glyphicon-paperclip"></i>',
+		tooltip: attachTooltip,
+		className: 'note-btn-em-cs-attach',
+		container: 'body',
+		click: function() {
+			var $note = context.layoutInfo.note;
+			var element = document.createElement('div');
+			element.innerHTML = '<input type="file" multiple>';
+			var fileInput = element.firstChild;
+			fileInput.addEventListener('change', function() {
+				if (fileInput.files && fileInput.files.length) {
+					var form = $note.closest('form');
+					var statusEl = form.find('.em-cs-note-upload-status');
+					emUploadCsNoteFilesQueue(fileInput.files, 0, $note, statusEl);
+				}
+				fileInput.value = '';
+			});
+			fileInput.click();
+		}
+	}).render();
+}
+
+/**
  * Turn CS note fields into Summernote (same stack as conversation reply).
  */
 function emInitCsNoteEditors() {
@@ -299,11 +331,13 @@ function emInitCsNoteEditors() {
 			disableDragAndDrop: true,
 			placeholder: $ta.attr('placeholder') || '',
 			toolbar: [
-				['style', ['bold', 'italic', 'underline', 'color']],
+				['style', ['emCsAttach', 'bold', 'italic', 'underline', 'color']],
 				['para', ['ul', 'ol']],
-				['insert', ['link', 'picture']],
-				['view', ['codeview']]
+				['insert', ['link', 'picture']]
 			],
+			buttons: {
+				emCsAttach: emCsNoteAttachmentButton
+			},
 			callbacks: {
 				onImageUpload: function(files) {
 					if (!files) {
@@ -323,24 +357,6 @@ function emInitCsNoteEditors() {
 
 function emInitPanelHandlers()
 {
-	// CS request note: attach files → upload to FreeScout, append to note editor
-	$(document).off('change', '.em-cs-note-file-input').on('change', '.em-cs-note-file-input', function() {
-		var input = this;
-		var files = input.files;
-		if (!files || !files.length) {
-			return;
-		}
-		var form = $(input).closest('form');
-		var $noteField = form.find('textarea[name="note"]');
-		var statusEl = form.find('.em-cs-note-upload-status');
-		if (!$noteField.length) {
-			$(input).val('');
-			return;
-		}
-		emUploadCsNoteFilesQueue(files, 0, $noteField, statusEl);
-		$(input).val('');
-	});
-
 	// Click handler for order items
 	$(document).off('click', '.em-order-item').on('click', '.em-order-item', function(e) {
 		e.preventDefault();
@@ -834,10 +850,6 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 					html += '<div class="form-group" style="margin-bottom: 10px;">';
 					html += '<label style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 6px; display: block;">Add Note</label>';
 					html += '<textarea name="note" class="form-control em-cs-note-editor" rows="3" placeholder="Enter your note..." style="font-size: 12px; resize: vertical;"></textarea>';
-					html += '</div>';
-					html += '<div class="form-group" style="margin-bottom: 10px;">';
-					html += '<label style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 4px; display: block;">Attach files (optional)</label>';
-					html += '<input type="file" class="em-cs-note-file-input" multiple style="font-size: 12px;" />';
 					html += '<span class="em-cs-note-upload-status" style="font-size: 11px; color: #999; display: block; margin-top: 4px;"></span>';
 					html += '</div>';
 					html += '<div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 10px;">';
@@ -894,10 +906,6 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 		html += '<div class="form-group" style="margin-bottom: 15px;">';
 		html += '<label for="cs_request_note" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Note</label>';
 		html += '<textarea id="cs_request_note" name="note" class="form-control em-cs-note-editor" rows="4" placeholder="Enter your request details..." style="font-size: 13px; resize: vertical;"></textarea>';
-		html += '</div>';
-		html += '<div class="form-group" style="margin-bottom: 15px;">';
-		html += '<label style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 4px; display: block;">Attach files (optional)</label>';
-		html += '<input type="file" class="em-cs-note-file-input" multiple style="font-size: 13px;" />';
 		html += '<span class="em-cs-note-upload-status" style="font-size: 12px; color: #999; display: block; margin-top: 4px;"></span>';
 		html += '</div>';
 		html += '<div class="form-group" style="margin-bottom: 0;">';

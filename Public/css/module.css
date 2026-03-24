@@ -385,3 +385,8 @@
 .em-detail-section .em-cs-note-editor + .note-editor .note-editable {
 	min-height: 80px;
 }
+
+/* CS note: paperclip in toolbar (first button) */
+.em-detail-section .note-toolbar .note-btn-em-cs-attach {
+	margin-right: 4px;
+}
