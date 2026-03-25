@@ -963,14 +963,19 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 				html += '<div class="em-line-item-sku">SKU: ' + emEscapeHtml(item.variant.sku) + '</div>';
 			}
 
-			// Onway qty for this line item
+			// EC SKU + inventory (from onway API)
 			var onwayInfo = emGetOnwayForLineItem(order, item.id);
 			if (onwayInfo) {
-				html += '<div class="em-line-item-sku" style="margin-top: 2px;">';
-				html += '<span style="color: #6d7175;">EC SKU: ' + emEscapeHtml(onwayInfo.ec_product_sku) + '</span>';
-				html += ' &nbsp; <span style="color: #108043; font-weight: 500;">Onway: ' + onwayInfo.onway_qty + '</span>';
-				html += ' &nbsp; <span style="color: #6d7175;">Sellable: ' + onwayInfo.sellable_qty + '</span>';
-				html += '</div>';
+				var ow = onwayInfo.onway_qty;
+				var rs = onwayInfo.reserved_qty != null ? onwayInfo.reserved_qty : onwayInfo.reserved;
+				var sl = onwayInfo.sellable_qty;
+				html += '<div class="em-line-item-sku" style="margin-top: 4px;">';
+				html += '<div style="color: #6d7175;">EC SKU: ' + emEscapeHtml(onwayInfo.ec_product_sku || '') + '</div>';
+				html += '<div style="font-size: 11px; color: #637381; margin-top: 4px; line-height: 1.45;">';
+				html += '<span style="color: #108043; font-weight: 500;">Onway: ' + emFormatMaybeQty(ow) + '</span>';
+				html += '<span style="margin-left: 10px;">Reserved: ' + emFormatMaybeQty(rs) + '</span>';
+				html += '<span style="margin-left: 10px;">Sellable: ' + emFormatMaybeQty(sl) + '</span>';
+				html += '</div></div>';
 			}
 			html += '</div>';
 
@@ -1551,6 +1556,15 @@ function emCapitalize(str)
 	return str.replace(/\b\w/g, function(char) {
 		return char.toUpperCase();
 	});
+}
+
+/** Inventory qty for display; missing values show an em dash. */
+function emFormatMaybeQty(v)
+{
+	if (v === null || v === undefined || v === '') {
+		return '—';
+	}
+	return v;
 }
 
 function emGetOnwayForLineItem(order, lineItemId)
