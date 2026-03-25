@@ -357,6 +357,29 @@ function emInitCsNoteEditors() {
 
 function emInitPanelHandlers()
 {
+	// Collapsible sections (e.g. Inbound Shipments)
+	$(document).off('click', '.em-collapsible-toggle').on('click', '.em-collapsible-toggle', function(e) {
+		e.preventDefault();
+		var $wrap = $(this).closest('.em-collapsible');
+		if (!$wrap.length) {
+			return;
+		}
+		var collapsed = $wrap.toggleClass('em-collapsed').hasClass('em-collapsed');
+		$(this).attr('aria-expanded', collapsed ? 'false' : 'true');
+		var $arrow = $(this).find('.em-collapsible-arrow');
+		if (collapsed) {
+			$arrow.removeClass('glyphicon-chevron-down').addClass('glyphicon-chevron-right');
+		} else {
+			$arrow.removeClass('glyphicon-chevron-right').addClass('glyphicon-chevron-down');
+		}
+	});
+	$(document).off('keydown', '.em-collapsible-toggle').on('keydown', '.em-collapsible-toggle', function(e) {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			$(this).trigger('click');
+		}
+	});
+
 	// Click handler for order items
 	$(document).off('click', '.em-order-item').on('click', '.em-order-item', function(e) {
 		e.preventDefault();
@@ -991,8 +1014,12 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			}
 		}
 		if (allPackages.length > 0) {
-			html += '<div class="em-detail-section">';
-			html += '<div class="em-detail-section-title">Inbound Shipments (ASN)</div>';
+			html += '<div class="em-detail-section em-collapsible em-inbound-shipments em-collapsed">';
+			html += '<div class="em-detail-section-title em-collapsible-toggle" role="button" tabindex="0" aria-expanded="false">';
+			html += '<span class="em-collapsible-arrow glyphicon glyphicon-chevron-right" aria-hidden="true"></span>';
+			html += '<span>Inbound Shipments (ASN)</span>';
+			html += '</div>';
+			html += '<div class="em-collapsible-body">';
 			for (var ap = 0; ap < allPackages.length; ap++) {
 				var apkg = allPackages[ap];
 				html += '<div style="padding: 8px 0;' + (ap < allPackages.length - 1 ? ' border-bottom: 1px solid #eee;' : '') + '">';
@@ -1046,6 +1073,7 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 
 				html += '</div>';
 			}
+			html += '</div>';
 			html += '</div>';
 		}
 	}

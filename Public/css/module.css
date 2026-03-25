@@ -184,6 +184,31 @@
 	margin-bottom: 12px;
 }
 
+/* Collapsible sections (Inbound Shipments, etc.) */
+.em-detail-section.em-collapsible.em-collapsed .em-collapsible-body {
+	display: none;
+}
+.em-detail-section .em-collapsible-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 12px;
+	cursor: pointer;
+	user-select: none;
+}
+.em-detail-section.em-collapsible.em-collapsed .em-collapsible-toggle {
+	margin-bottom: 0;
+}
+.em-detail-section .em-collapsible-arrow {
+	flex-shrink: 0;
+	font-size: 12px;
+	color: #6d7175;
+	transition: transform 0.15s ease;
+}
+.em-detail-section .em-collapsible-toggle:hover .em-collapsible-arrow {
+	color: #202223;
+}
+
 .em-detail-row {
 	display: flex;
 	justify-content: space-between;
