@@ -1436,12 +1436,9 @@ function emFormatTrackingNumberHtml(trackingNumber, carrier, opts) {
 			? '<span class="' + opts.linkClass + '" style="font-family: monospace; font-size: 12px;">' + escaped + '</span>'
 			: '<span style="font-family: monospace; font-size: 12px;">' + escaped + '</span>');
 
-	var secondary = '';
-	if (useEm && carrierUrl && primaryHref === emUrl) {
-		secondary = '<div style="font-size: 11px; margin-top: 4px; line-height: 1.5;">' +
-			'<a href="' + carrierUrl + '" target="_blank" rel="noopener noreferrer" class="em-panel-link">' + emEscapeHtml(emCarrierLinkLabel(carrier)) + '</a></div>';
-	}
-	return main + secondary;
+	// No second-row carrier link when primary is Everymarket: order carrier is often the domestic
+	// service (e.g. USPS) while CP… numbers are intl (India Post, Japan Post, etc.) — misleading.
+	return main;
 }
 
 function emGetAsnStatusBadge(status)
