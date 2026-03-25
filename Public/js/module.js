@@ -1033,7 +1033,11 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 				// Row 2: Carrier + tracking
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
 				html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(apkg.carrier || 'Carrier N/A') + '</div>';
-				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number || 'N/A') + '</div>';
+				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(apkg.tracking_number || 'N/A');
+				if (apkg.tracking_number) {
+					html += emTrackingLinksRowHtml(apkg.tracking_number, apkg.carrier, { everymarket: true });
+				}
+				html += '</div>';
 				html += '</div>';
 
 				// Row 3: EC SKU + Warehouse
@@ -1112,7 +1116,9 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			if (shipInfo.s_tracking) {
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
 				html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(shipInfo.s_carrier || 'Carrier') + '</div>';
-				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.s_tracking) + '</div>';
+				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.s_tracking);
+				html += emTrackingLinksRowHtml(shipInfo.s_tracking, shipInfo.s_carrier, { everymarket: false });
+				html += '</div>';
 				html += '</div>';
 			}
 
@@ -1120,7 +1126,10 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			if (shipInfo.s_intl_forward && shipInfo.s_intl_tracking) {
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
 				html += '<div class="em-detail-label" style="font-size: 12px;">Intl Tracking</div>';
-				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.s_intl_tracking) + '</div>';
+				html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.s_intl_tracking);
+				var intlCarrier = shipInfo.s_intl_carrier || shipInfo.s_carrier || '';
+				html += emTrackingLinksRowHtml(shipInfo.s_intl_tracking, intlCarrier, { everymarket: true });
+				html += '</div>';
 				html += '</div>';
 			}
 
@@ -1145,7 +1154,9 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 					if (eccang.tracking_number) {
 						html += '<div class="em-detail-row" style="padding: 2px 0;">';
 						html += '<div class="em-detail-label" style="font-size: 12px;">Tracking</div>';
-						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(eccang.tracking_number) + '</div>';
+						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(eccang.tracking_number);
+						html += emTrackingLinksRowHtml(eccang.tracking_number, eccang.carrier || '', { everymarket: true });
+						html += '</div>';
 						html += '</div>';
 					}
 					if (eccang.items && eccang.items.length > 0) {
@@ -1165,7 +1176,9 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 				html += '<div class="em-detail-row" style="padding: 2px 0;">';
 				html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(shipInfo.shipstation.order_number) + '</div>';
 				if (shipInfo.shipstation.tracking_number) {
-					html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.shipstation.tracking_number) + '</div>';
+					html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(shipInfo.shipstation.tracking_number);
+					html += emTrackingLinksRowHtml(shipInfo.shipstation.tracking_number, shipInfo.shipstation.carrier_code || shipInfo.shipstation.carrier || shipInfo.s_carrier || '', { everymarket: false });
+					html += '</div>';
 				} else {
 					html += '<div class="em-detail-value" style="font-size: 11px; color: #999;">No Shipment</div>';
 				}
@@ -1183,13 +1196,17 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 					if (fo.buy_tracking) {
 						html += '<div class="em-detail-row" style="padding: 2px 0;">';
 						html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(fo.buy_carrier || 'Carrier') + '</div>';
-						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(fo.buy_tracking) + '</div>';
+						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(fo.buy_tracking);
+						html += emTrackingLinksRowHtml(fo.buy_tracking, fo.buy_carrier, { everymarket: true });
+						html += '</div>';
 						html += '</div>';
 					}
 					if (fo.forward_tracking) {
 						html += '<div class="em-detail-row" style="padding: 2px 0;">';
 						html += '<div class="em-detail-label" style="font-size: 12px;">' + emEscapeHtml(fo.forward_carrier || 'Forward') + '</div>';
-						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(fo.forward_tracking) + '</div>';
+						html += '<div class="em-detail-value" style="font-family: monospace; font-size: 12px;">' + emEscapeHtml(fo.forward_tracking);
+						html += emTrackingLinksRowHtml(fo.forward_tracking, fo.forward_carrier, { everymarket: true });
+						html += '</div>';
 						html += '</div>';
 					}
 					if (fo.buy_order_number) {
@@ -1269,10 +1286,11 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			if (shipment.tracking) {
 				html += '<div class="em-tracking">';
 				if (shipment.tracking_url) {
-					html += '<a href="' + shipment.tracking_url + '" target="_blank" class="em-tracking-number">#' + shipment.tracking + '</a>';
+					html += '<a href="' + shipment.tracking_url + '" target="_blank" rel="noopener noreferrer" class="em-tracking-number">#' + emEscapeHtml(String(shipment.tracking)) + '</a>';
 				} else {
-					html += '<span class="em-tracking-number">#' + shipment.tracking + '</span>';
+					html += '<span class="em-tracking-number">#' + emEscapeHtml(String(shipment.tracking)) + '</span>';
 				}
+				html += emTrackingLinksRowHtml(shipment.tracking, shipment.carrier, { everymarket: true });
 				html += '</div>';
 			}
 		}
@@ -1332,6 +1350,84 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 	html += '</div>';
 
 	return html;
+}
+
+/**
+ * Everymarket public tracking page (international / India Post style numbers, etc.)
+ */
+function emEverymarketTrackingUrl(trackingNumber) {
+	var t = String(trackingNumber || '').trim();
+	if (!t) {
+		return '';
+	}
+	return 'https://everymarket.com/tracking/' + encodeURIComponent(t);
+}
+
+/**
+ * Carrier tracking URL (USPS, DHL, FedEx, UPS) from carrier name + number.
+ */
+function emCarrierTrackingUrl(carrier, trackingNumber) {
+	var t = String(trackingNumber || '').trim();
+	if (!t) {
+		return '';
+	}
+	var c = String(carrier || '').toLowerCase();
+	if (c.indexOf('usps') !== -1 || c.indexOf('united states postal') !== -1) {
+		return 'https://tools.usps.com/go/TrackConfirmAction?tLabels=' + encodeURIComponent(t);
+	}
+	if (c.indexOf('dhl') !== -1) {
+		return 'https://www.dhl.com/en/express/tracking.html?AWB=' + encodeURIComponent(t);
+	}
+	if (c.indexOf('fedex') !== -1 || c.indexOf('fed ex') !== -1) {
+		return 'https://www.fedex.com/fedextrack/?trknbr=' + encodeURIComponent(t);
+	}
+	if (c.indexOf('ups') !== -1 && c.indexOf('usps') === -1) {
+		return 'https://www.ups.com/track?tracknum=' + encodeURIComponent(t);
+	}
+	return '';
+}
+
+function emCarrierLinkLabel(carrier) {
+	var c = String(carrier || '').toLowerCase();
+	if (c.indexOf('usps') !== -1 || c.indexOf('united states postal') !== -1) {
+		return 'USPS';
+	}
+	if (c.indexOf('dhl') !== -1) {
+		return 'DHL';
+	}
+	if (c.indexOf('fedex') !== -1 || c.indexOf('fed ex') !== -1) {
+		return 'FedEx';
+	}
+	if (c.indexOf('ups') !== -1) {
+		return 'UPS';
+	}
+	return 'Carrier';
+}
+
+/**
+ * Small row of links under a tracking number.
+ * opts.everymarket — include Everymarket tracking URL
+ * opts.carrier — optional carrier string for USPS/DHL/FedEx/UPS
+ */
+function emTrackingLinksRowHtml(trackingNumber, carrier, opts) {
+	opts = opts || {};
+	var t = String(trackingNumber || '').trim();
+	if (!t) {
+		return '';
+	}
+	var parts = [];
+	if (opts.everymarket) {
+		var emUrl = emEverymarketTrackingUrl(t);
+		parts.push('<a href="' + emUrl + '" target="_blank" rel="noopener noreferrer" class="em-panel-link">Everymarket</a>');
+	}
+	var cUrl = emCarrierTrackingUrl(carrier, t);
+	if (cUrl) {
+		parts.push('<a href="' + cUrl + '" target="_blank" rel="noopener noreferrer" class="em-panel-link">' + emEscapeHtml(emCarrierLinkLabel(carrier)) + '</a>');
+	}
+	if (!parts.length) {
+		return '';
+	}
+	return '<div style="font-size: 11px; margin-top: 4px; line-height: 1.5;">' + parts.join(' · ') + '</div>';
 }
 
 function emGetAsnStatusBadge(status)
