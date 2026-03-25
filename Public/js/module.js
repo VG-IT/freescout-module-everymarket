@@ -1339,7 +1339,16 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 }
 
 /**
- * Everymarket public tracking page (international / India Post style numbers, etc.)
+ * Intl numbers that use Everymarket’s tracker (India Post style, e.g. CP942981811IN).
+ * Domestic / carrier numbers (e.g. USPS) must not use EM — link the carrier instead.
+ */
+function emIsEverymarketIntlTrackingNumber(trackingNumber) {
+	var t = String(trackingNumber || '').trim();
+	return t.length > 0 && /^CP/i.test(t);
+}
+
+/**
+ * Everymarket public tracking page (only meaningful for emIsEverymarketIntlTrackingNumber).
  */
 function emEverymarketTrackingUrl(trackingNumber) {
 	var t = String(trackingNumber || '').trim();
@@ -1392,7 +1401,7 @@ function emCarrierLinkLabel(carrier) {
 
 /**
  * Renders the tracking number as the link text (not a separate "Everymarket" label).
- * opts.everymarket — prefer Everymarket URL when no primaryUrl
+ * opts.everymarket — allow Everymarket URL only for CP… intl numbers (see emIsEverymarketIntlTrackingNumber)
  * opts.primaryUrl — optional first link (e.g. API tracking_url); when set, number links here
  * opts.linkClass — extra classes on the primary anchor (e.g. em-tracking-number in Order Details)
  */
@@ -1405,11 +1414,12 @@ function emFormatTrackingNumberHtml(trackingNumber, carrier, opts) {
 	var escaped = emEscapeHtml(t);
 	var carrierUrl = emCarrierTrackingUrl(carrier, t);
 	var emUrl = emEverymarketTrackingUrl(t);
+	var useEm = opts.everymarket && emIsEverymarketIntlTrackingNumber(t);
 
 	var primaryHref = '';
 	if (opts.primaryUrl && String(opts.primaryUrl).trim()) {
 		primaryHref = String(opts.primaryUrl).trim();
-	} else if (opts.everymarket) {
+	} else if (useEm) {
 		primaryHref = emUrl;
 	} else if (carrierUrl) {
 		primaryHref = carrierUrl;
@@ -1427,7 +1437,7 @@ function emFormatTrackingNumberHtml(trackingNumber, carrier, opts) {
 			: '<span style="font-family: monospace; font-size: 12px;">' + escaped + '</span>');
 
 	var secondary = '';
-	if (opts.everymarket && carrierUrl && primaryHref === emUrl) {
+	if (useEm && carrierUrl && primaryHref === emUrl) {
 		secondary = '<div style="font-size: 11px; margin-top: 4px; line-height: 1.5;">' +
 			'<a href="' + carrierUrl + '" target="_blank" rel="noopener noreferrer" class="em-panel-link">' + emEscapeHtml(emCarrierLinkLabel(carrier)) + '</a></div>';
 	}
