@@ -755,6 +755,67 @@ function emCloseSearchPanel()
 	$('body').css('overflow', '');
 }
 
+/** True when every CS request on the order is closed (status finalized). */
+function emAllCsRequestsFinalized(order)
+{
+	if (!order.cs_requests || !order.cs_requests.length) {
+		return true;
+	}
+	for (var i = 0; i < order.cs_requests.length; i++) {
+		var req = order.cs_requests[i].request;
+		if (!req || req.status != 'finalized') {
+			return false;
+		}
+	}
+	return true;
+}
+
+/** Inner HTML for creating a new CS request (form only). */
+function emBuildNewCsRequestFormHtml(order)
+{
+	var html = '';
+	html += '<form class="em-cs-request-form" data-order-number="' + (order.number || '') + '">';
+	html += '<div class="form-group" style="margin-bottom: 15px;">';
+	html += '<label for="cs_request_line_item" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Order Item</label>';
+	html += '<select id="cs_request_line_item" name="line_item_id" class="form-control" style="font-size: 13px;" required>';
+	html += '<option value="">-- Select Item --</option>';
+	if (order.line_items && order.line_items.length > 0) {
+		for (var k = 0; k < order.line_items.length; k++) {
+			var line_item = order.line_items[k];
+			var item_id = line_item.id || line_item.line_item_id || '';
+			var item_name = (line_item.variant && line_item.variant.name) ? line_item.variant.name : 'Item #' + (k + 1);
+			var item_sku = (line_item.variant && line_item.variant.sku) ? ' (SKU: ' + line_item.variant.sku + ')' : '';
+			html += '<option value="' + item_id + '">' + emEscapeHtml(item_name) + item_sku + '</option>';
+		}
+	}
+	html += '</select>';
+	html += '</div>';
+	html += '<div class="form-group" style="margin-bottom: 15px;">';
+	html += '<label for="cs_request_reason" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Reason</label>';
+	html += '<select id="cs_request_reason" name="reason" class="form-control" style="font-size: 13px;" required>';
+	html += '<option value="">-- Select Reason --</option>';
+	html += '<option value="cancel">Cancel</option>';
+	html += '<option value="refund">Refund</option>';
+	html += '<option value="return">Return</option>';
+	html += '<option value="tracking_info">Tracking Info</option>';
+	html += '<option value="others">Others</option>';
+	html += '</select>';
+	html += '</div>';
+	html += '<div class="form-group" style="margin-bottom: 15px;">';
+	html += '<label for="cs_request_note" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Note</label>';
+	html += '<textarea id="cs_request_note" name="note" class="form-control em-cs-note-editor" rows="4" placeholder="Enter your request details..." style="font-size: 13px; resize: vertical;"></textarea>';
+	html += '<span class="em-cs-note-upload-status" style="font-size: 12px; color: #999; display: block; margin-top: 4px;"></span>';
+	html += '</div>';
+	html += '<div class="form-group" style="margin-bottom: 0;">';
+	html += '<button type="submit" class="btn btn-primary btn-sm" style="font-size: 13px;">';
+	html += '<i class="glyphicon glyphicon-send" style="margin-right: 5px;"></i>Submit Request';
+	html += '</button>';
+	html += '<span class="em-form-message" style="margin-left: 10px; font-size: 12px;"></span>';
+	html += '</div>';
+	html += '</form>';
+	return html;
+}
+
 function emBuildOrderDetailsHTML(order, includeCsRequests)
 {
 	var html = '';
@@ -891,53 +952,22 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 			}		
 		}
 
+		if (emAllCsRequestsFinalized(order)) {
+			html += '<div style="padding: 15px; margin-top: 10px; border-top: 1px solid #e0e0e0;">';
+			html += '<div style="font-weight: 600; font-size: 12px; color: #333; margin-bottom: 10px;">New CS request</div>';
+			html += emBuildNewCsRequestFormHtml(order);
+			html += '</div>';
+		}
+
 		html += '</div>';
 		} else {
-		// Show form to create new CS request when none exist
+		// No CS requests yet — show create form only
 		html += '<div class="em-detail-section">';
 		html += '<div class="em-detail-section-title">';
 		html += '<strong>CS Requests</strong>';
 		html += '</div>';
 		html += '<div style="padding: 15px;">';
-		html += '<form class="em-cs-request-form" data-order-number="' + (order.number || '') + '">';
-		html += '<div class="form-group" style="margin-bottom: 15px;">';
-		html += '<label for="cs_request_line_item" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Order Item</label>';
-		html += '<select id="cs_request_line_item" name="line_item_id" class="form-control" style="font-size: 13px;" required>';
-		html += '<option value="">-- Select Item --</option>';
-		if (order.line_items && order.line_items.length > 0) {
-			for (var k = 0; k < order.line_items.length; k++) {
-				var line_item = order.line_items[k];
-				var item_id = line_item.id || line_item.line_item_id || '';
-				var item_name = (line_item.variant && line_item.variant.name) ? line_item.variant.name : 'Item #' + (k + 1);
-				var item_sku = (line_item.variant && line_item.variant.sku) ? ' (SKU: ' + line_item.variant.sku + ')' : '';
-				html += '<option value="' + item_id + '">' + emEscapeHtml(item_name) + item_sku + '</option>';
-			}
-		}
-		html += '</select>';
-		html += '</div>';
-		html += '<div class="form-group" style="margin-bottom: 15px;">';
-		html += '<label for="cs_request_reason" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Reason</label>';
-		html += '<select id="cs_request_reason" name="reason" class="form-control" style="font-size: 13px;" required>';
-		html += '<option value="">-- Select Reason --</option>';
-		html += '<option value="cancel">Cancel</option>';
-		html += '<option value="refund">Refund</option>';
-		html += '<option value="return">Return</option>';
-		html += '<option value="tracking_info">Tracking Info</option>';
-		html += '<option value="others">Others</option>';
-		html += '</select>';
-		html += '</div>';
-		html += '<div class="form-group" style="margin-bottom: 15px;">';
-		html += '<label for="cs_request_note" style="font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; display: block;">Note</label>';
-		html += '<textarea id="cs_request_note" name="note" class="form-control em-cs-note-editor" rows="4" placeholder="Enter your request details..." style="font-size: 13px; resize: vertical;"></textarea>';
-		html += '<span class="em-cs-note-upload-status" style="font-size: 12px; color: #999; display: block; margin-top: 4px;"></span>';
-		html += '</div>';
-		html += '<div class="form-group" style="margin-bottom: 0;">';
-		html += '<button type="submit" class="btn btn-primary btn-sm" style="font-size: 13px;">';
-		html += '<i class="glyphicon glyphicon-send" style="margin-right: 5px;"></i>Submit Request';
-		html += '</button>';
-		html += '<span class="em-form-message" style="margin-left: 10px; font-size: 12px;"></span>';
-		html += '</div>';
-		html += '</form>';
+		html += emBuildNewCsRequestFormHtml(order);
 		html += '</div>';
 		html += '</div>';
 		}
