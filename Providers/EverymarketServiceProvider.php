@@ -943,6 +943,35 @@ class EverymarketServiceProvider extends ServiceProvider
     }
 
     /**
+     * Reopen a finalized CS request (no note; event note is stored empty).
+     *
+     * @param string $order_number
+     * @param string $order_request_id
+     * @param string|null $user_email
+     * @param Mailbox|null $mailbox
+     * @return array
+     */
+    public static function apiReopenCsRequest($order_number, $order_request_id, $user_email = null, $mailbox = null)
+    {
+        $api_info = self::getApiInfo($mailbox);
+
+        if (empty($order_number) || empty($order_request_id)) {
+            return ['error' => 'Order number and order request ID are required', 'data' => []];
+        }
+
+        $url = $api_info['api_url'].'/api/'.$api_info['api_version'].'/orders/'.$order_number.'/cs_requests/'.$order_request_id.'/reopen?token='.$api_info['access_token'];
+
+        $post_data = [
+            'note' => '',
+        ];
+        if ($user_email !== null) {
+            $post_data['user_email'] = $user_email;
+        }
+
+        return self::makeEverymarketApiCall($url, $post_data);
+    }
+
+    /**
      * Make Everymarket API call with authentication.
      * 
      * @param string $url The API URL

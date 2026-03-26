@@ -623,6 +623,60 @@ function emInitPanelHandlers()
 		);
 	});
 
+	// Reopen finalized CS Request
+	$(document).off('click', '.em-reopen-cs-request-btn').on('click', '.em-reopen-cs-request-btn', function(e) {
+		e.preventDefault();
+		var btn = $(this);
+		var orderRequestId = btn.data('order-request-id');
+		var orderNumber = btn.data('order-number');
+		var wrap = btn.parent();
+		var messageSpan = wrap.find('.em-reopen-cs-request-message');
+
+		if (!orderRequestId || !orderNumber) {
+			messageSpan.text('Missing required data').css('color', '#d9534f');
+			return;
+		}
+
+		if (!confirm('Reopen this CS request?')) {
+			return;
+		}
+
+		btn.prop('disabled', true).text('Reopening...');
+		messageSpan.text('').css('color', '');
+
+		var loadingHtml = '<div class="em-cs-reopen-loading" style="text-align: center; padding: 10px; color: #999; font-size: 12px;"><i class="glyphicon glyphicon-refresh glyphicon-spin" style="margin-right: 5px;"></i>Reopening...</div>';
+		wrap.append(loadingHtml);
+
+		fsAjax({
+			action: 'reopen_cs_request',
+			order_request_id: orderRequestId,
+			order_number: orderNumber,
+			user_email: em_user_email,
+			mailbox_id: getGlobalAttr('mailbox_id'),
+			conversation_id: getGlobalAttr('conversation_id')
+		},
+		laroute.route('everymarket.ajax'),
+		function(response) {
+			wrap.find('.em-cs-reopen-loading').remove();
+			if (response.status === 'success') {
+				messageSpan.text('Reopened').css('color', '#5cb85c');
+				setTimeout(function() {
+					emLoadOrders();
+				}, 600);
+			} else {
+				messageSpan.text(response.msg || 'Error reopening request').css('color', '#d9534f');
+				btn.prop('disabled', false).html('<i class="glyphicon glyphicon-repeat" style="margin-right: 5px;"></i>Reopen Request');
+			}
+		},
+		true,
+		function(xhr, status, error) {
+			wrap.find('.em-cs-reopen-loading').remove();
+			messageSpan.text('Error: ' + (error || 'Network error')).css('color', '#d9534f');
+			btn.prop('disabled', false).html('<i class="glyphicon glyphicon-repeat" style="margin-right: 5px;"></i>Reopen Request');
+		}
+		);
+	});
+
 	emInitCsNoteEditors();
 }
 
@@ -946,6 +1000,13 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 					html += '<span class="em-form-message" style="margin-left: auto; font-size: 11px;"></span>';
 					html += '</div>';
 					html += '</form>';
+					html += '</div>';
+				} else {
+					html += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">';
+					html += '<button type="button" class="btn btn-default btn-sm em-reopen-cs-request-btn" data-order-request-id="' + (cs_request.request.id || '') + '" data-order-number="' + (order.number || '') + '" style="font-size: 12px;">';
+					html += '<i class="glyphicon glyphicon-repeat" style="margin-right: 5px;"></i>Reopen Request';
+					html += '</button>';
+					html += '<span class="em-reopen-cs-request-message" style="margin-left: 10px; font-size: 11px;"></span>';
 					html += '</div>';
 				}
 				html += '</div>';

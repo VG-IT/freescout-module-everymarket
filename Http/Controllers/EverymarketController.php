@@ -348,6 +348,53 @@ class EverymarketController extends Controller
                 
                 break;
 
+            case 'reopen_cs_request':
+                $response['status'] = 'error';
+
+                $mailbox = null;
+                if ($request->mailbox_id) {
+                    $mailbox = Mailbox::find($request->mailbox_id);
+                }
+
+                if (empty($request->order_request_id) || empty($request->order_number)) {
+                    $response['msg'] = 'Missing required fields';
+                    break;
+                }
+
+                $mailbox_api_enabled = \Everymarket::isMailboxApiEnabled($mailbox);
+
+                if (\Everymarket::isApiEnabled() || $mailbox_api_enabled) {
+                    $api_result = \Everymarket::apiReopenCsRequest(
+                        $request->order_number,
+                        $request->order_request_id,
+                        $request->user_email ?? null,
+                        $mailbox
+                    );
+
+                    if (!empty($api_result['error'])) {
+                        $response['status'] = 'error';
+                        $response['msg'] = $api_result['error'];
+                        \Log::error('[Everymarket] Failed to reopen CS request: '.$api_result['error']);
+                    } else {
+                        $response['status'] = 'success';
+                        $response['msg'] = __('CS request reopened successfully');
+
+                        $user = auth()->user();
+                        $conversation = Conversation::find($request->conversation_id);
+                        if (!$conversation->isRequestedByUser($user->id)) {
+                            $conversation->requestedBy($user);
+                        }
+
+                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
+                        $conversation->setMeta('custom_fields.cs_request_status', 'waiting_reply', true);
+                    }
+                } else {
+                    $response['status'] = 'error';
+                    $response['msg'] = __('API is not enabled');
+                }
+
+                break;
+
             case 'order_details':
                 $response['html'] = '';
                 $response['status'] = 'success';
