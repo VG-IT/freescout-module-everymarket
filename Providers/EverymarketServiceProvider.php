@@ -348,6 +348,17 @@ class EverymarketServiceProvider extends ServiceProvider
             }
             return $order_bys;
         }, 20, 2);
+
+        // Conversation list: highlight rows when any outgoing reply to the customer failed to send.
+        \Eventy::addFilter('conversations_table.preload_table_data', function ($conversations) {
+            return \Modules\Everymarket\Support\ConversationOutgoingFailedHelper::preloadFailedOutgoingConversationIds($conversations);
+        }, 20, 1);
+
+        \Eventy::addAction('conversations_table.row_class', function ($conversation) {
+            if (\Modules\Everymarket\Support\ConversationOutgoingFailedHelper::conversationHasFailedOutgoing($conversation->id)) {
+                echo 'em-conv-outgoing-failed';
+            }
+        }, 25, 1);
     }
 
     /**

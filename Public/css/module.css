@@ -415,3 +415,14 @@
 .em-detail-section .note-toolbar .note-btn-em-cs-attach {
 	margin-right: 4px;
 }
+
+/* Conversation list: any failed outgoing message to customer */
+.table.table-conversations tbody tr.em-conv-outgoing-failed {
+	background-color: #fdeaea;
+}
+.table.table-conversations tbody tr.em-conv-outgoing-failed:hover {
+	background-color: #f8d4d4;
+}
+.table-conversations .em-conv-outgoing-failed .conv-date a {
+	background-color: #f5c4c4;
+}
