@@ -339,6 +339,11 @@ function emInitCsNoteEditors() {
 				emCsAttach: emCsNoteAttachmentButton
 			},
 			callbacks: {
+				onInit: function () {
+					if (typeof fsApplySummernoteDefaultTextColor === 'function') {
+						fsApplySummernoteDefaultTextColor($ta);
+					}
+				},
 				onImageUpload: function(files) {
 					if (!files) {
 						return;
