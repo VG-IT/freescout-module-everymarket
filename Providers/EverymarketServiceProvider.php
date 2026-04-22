@@ -888,6 +888,7 @@ class EverymarketServiceProvider extends ServiceProvider
             'reason' => $request->reason ?? null,
             'note' => $request->note ?? null,
             'user_email' => $request->user_email ?? null,
+            'resolution_type' => $request->resolution_type ?? null,
         ];
 
         return self::makeEverymarketApiCall($url, $post_data);
@@ -902,9 +903,10 @@ class EverymarketServiceProvider extends ServiceProvider
      * @param string $note
      * @param string|null $user_email
      * @param Mailbox|null $mailbox
+     * @param string|null $resolution_type return_and_refund or refund_only when reason is return
      * @return array
      */
-    public static function apiPostCsRequestEvent($order_number, $order_request_id, $note, $user_email = null, $mailbox = null)
+    public static function apiPostCsRequestEvent($order_number, $order_request_id, $note, $user_email = null, $mailbox = null, $resolution_type = null)
     {
         $api_info = self::getApiInfo($mailbox);
         
@@ -918,6 +920,10 @@ class EverymarketServiceProvider extends ServiceProvider
             'note' => $note,
             'user_email' => $user_email,
         ];
+
+        if ($resolution_type !== null && $resolution_type !== '') {
+            $post_data['resolution_type'] = $resolution_type;
+        }
 
         return self::makeEverymarketApiCall($url, $post_data);
     }
@@ -983,13 +989,42 @@ class EverymarketServiceProvider extends ServiceProvider
     }
 
     /**
+     * Delete the latest note event on a CS request (Everymarket API must enforce author = user_email).
+     *
+     * @param string $order_number
+     * @param string $order_request_id
+     * @param string|int $event_id
+     * @param string|null $user_email Authenticated agent email (API checks ownership)
+     * @param Mailbox|null $mailbox
+     * @return array
+     */
+    public static function apiDeleteCsRequestEvent($order_number, $order_request_id, $event_id, $user_email = null, $mailbox = null)
+    {
+        $api_info = self::getApiInfo($mailbox);
+
+        if (empty($order_number) || empty($order_request_id) || $event_id === '' || $event_id === null) {
+            return ['error' => 'Order number, request ID, and event ID are required', 'data' => []];
+        }
+
+        $url = $api_info['api_url'].'/api/'.$api_info['api_version'].'/orders/'.$order_number.'/cs_requests/'.$order_request_id.'/events/'.$event_id.'?token='.$api_info['access_token'];
+
+        $post_data = [];
+        if ($user_email !== null && $user_email !== '') {
+            $post_data['user_email'] = $user_email;
+        }
+
+        return self::makeEverymarketApiCall($url, $post_data, 'DELETE');
+    }
+
+    /**
      * Make Everymarket API call with authentication.
-     * 
+     *
      * @param string $url The API URL
-     * @param array|null $post_data Optional POST data (if provided, makes POST request)
+     * @param array|null $post_data Optional JSON body (POST or DELETE)
+     * @param string|null $http_method 'GET' (default when no body), 'POST', or 'DELETE'
      * @return array Response array with 'error' and 'data' keys
      */
-    private static function makeEverymarketApiCall($url, $post_data = null)
+    private static function makeEverymarketApiCall($url, $post_data = null, $http_method = null)
     {
         $response = ['error' => '', 'data' => []];
 
@@ -1004,8 +1039,15 @@ class EverymarketServiceProvider extends ServiceProvider
             curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
-            // If POST data is provided, make a POST request
-            if ($post_data !== null) {
+            $method = 'GET';
+            if ($http_method === 'DELETE') {
+                $method = 'DELETE';
+                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+                if ($post_data !== null && $post_data !== []) {
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+                }
+            } elseif ($post_data !== null) {
+                $method = 'POST';
                 curl_setopt($ch, CURLOPT_POST, true);
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
             }
@@ -1016,10 +1058,9 @@ class EverymarketServiceProvider extends ServiceProvider
 
             $json_decoded = json_decode($json, true);
 
-            $method = $post_data !== null ? 'POST' : 'GET';
-            \Log::info('[Everymarket] API ' . $method . ' - Status: ' . $status_code . ', URL: ' . $url);
-            if ($post_data !== null) {
-                \Log::info('[Everymarket] API POST Data: ' . json_encode($post_data));
+            \Log::info('[Everymarket] API '.$method.' - Status: '.$status_code.', URL: '.$url);
+            if ($post_data !== null && $post_data !== []) {
+                \Log::info('[Everymarket] API '.$method.' Data: '.json_encode($post_data));
             }
             \Log::info('[Everymarket] API Response Body: ' . substr($json, 0, 500));
 

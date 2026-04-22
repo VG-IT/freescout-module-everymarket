@@ -682,6 +682,51 @@ function emInitPanelHandlers()
 		);
 	});
 
+	// Delete own last note on an open CS request (Everymarket API enforces author; we only show icon when email matches)
+	$(document).off('click', '.em-delete-cs-event-btn').on('click', '.em-delete-cs-event-btn', function(e) {
+		e.preventDefault();
+		var btn = $(this);
+		var orderNumber = btn.data('order-number');
+		var orderRequestId = btn.data('order-request-id');
+		var eventId = btn.data('event-id');
+		if (!orderNumber || !orderRequestId || eventId === undefined || eventId === '') {
+			return;
+		}
+		if (!confirm('Delete this note? This cannot be undone.')) {
+			return;
+		}
+		btn.prop('disabled', true);
+		var row = btn.closest('.em-cs-event-row');
+		row.css('opacity', '0.6');
+		fsAjax({
+			action: 'delete_cs_request_event',
+			order_number: orderNumber,
+			order_request_id: orderRequestId,
+			event_id: eventId,
+			mailbox_id: getGlobalAttr('mailbox_id'),
+			conversation_id: getGlobalAttr('conversation_id')
+		},
+		laroute.route('everymarket.ajax'),
+		function(response) {
+			if (response.status === 'success') {
+				setTimeout(function() {
+					emLoadOrders();
+				}, 400);
+			} else {
+				row.css('opacity', '');
+				btn.prop('disabled', false);
+				alert(response.msg || 'Could not delete note');
+			}
+		},
+		true,
+		function() {
+			row.css('opacity', '');
+			btn.prop('disabled', false);
+			alert('Network error');
+		}
+		);
+	});
+
 	emInitCsNoteEditors();
 }
 
@@ -732,7 +777,6 @@ function emAddCustomerEmail(email)
 		},
 		laroute.route('everymarket.ajax'),
 		function(response) {
-			console.log(response);
 			if (typeof(response.status) != "undefined" && response.status == 'success') 
 			{
 				emCloseSearchPanel();
@@ -958,7 +1002,9 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 				
 				// Events list
 				html += '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e0e0;">';
-				for(var j = 0; j < cs_request.events.length; j++) {
+				var eventsLen = cs_request.events.length;
+				var csOngoing = cs_request.request && String(cs_request.request.status) !== 'finalized';
+				for(var j = 0; j < eventsLen; j++) {
 					var event = cs_request.events[j];
 					var event_date = '';
 					if (event.created_at) {
@@ -970,18 +1016,38 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 							event_date = event.created_at;
 						}
 					}
+					var eventIdVal = (event.id !== undefined && event.id !== null) ? event.id : ((event.event_id !== undefined && event.event_id !== null) ? event.event_id : '');
+					var authorEmail = emGetCsEventAuthorEmail(event);
+					var showDelete = csOngoing
+						&& eventsLen > 1
+						&& j === eventsLen - 1
+						&& authorEmail
+						&& emNormalizeEmail(authorEmail) === emNormalizeEmail(em_user_email)
+						&& String(eventIdVal) !== '';
 					
-					html += '<div style="margin-bottom: 12px; padding: 8px; background-color: #fff; border: 1px solid #e8e8e8; border-radius: 3px;">';
+					html += '<div class="em-cs-event-row" style="margin-bottom: 12px; padding: 8px; background-color: #fff; border: 1px solid #e8e8e8; border-radius: 3px;">';
 					html += '<div style="font-size: 12px; line-height: 1.5; color: #333; margin-bottom: 6px;">';
 					html += event.note || 'N/A';
 					html += '</div>';
-					html += '<div style="font-size: 11px; color: #999; display: flex; justify-content: space-between; align-items: center;">';
+					html += '<div style="font-size: 11px; color: #999; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">';
+					html += '<span style="flex: 1; min-width: 0;">';
 					if (event.action && event.role && event.created_by) {
-						html += '<span>' + event.action + ' by ' + event.role + ' ' + event.created_by + '</span>';
+						html += event.action + ' by ' + event.role + ' ' + event.created_by;
 					}
+					html += '</span>';
+					html += '<span style="display: inline-flex; align-items: center; gap: 8px;">';
 					if (event_date) {
-						html += '<span style="margin-left: auto;">' + event_date + '</span>';
+						html += '<span>' + event_date + '</span>';
 					}
+					if (showDelete) {
+						html += '<button type="button" class="btn btn-link btn-xs em-delete-cs-event-btn" style="padding: 0 2px; color: #c9302c;" title="Delete this note" aria-label="Delete note"';
+						html += ' data-order-number="' + emEscapeHtml(String(order.number || '')) + '"';
+						html += ' data-order-request-id="' + emEscapeHtml(String(cs_request.request.id || '')) + '"';
+						html += ' data-event-id="' + emEscapeHtml(String(eventIdVal)) + '">';
+						html += '<i class="glyphicon glyphicon-trash"></i>';
+						html += '</button>';
+					}
+					html += '</span>';
 					html += '</div>';
 					html += '</div>';
 				}
@@ -1672,6 +1738,36 @@ function emGetOnwayForLineItem(order, lineItemId)
 		}
 	}
 	return null;
+}
+
+/** Lowercase trim for comparing agent email to CS event author email. */
+function emNormalizeEmail(s)
+{
+	if (!s || typeof s !== 'string') {
+		return '';
+	}
+	return s.trim().toLowerCase();
+}
+
+/**
+ * Author email on a CS timeline event (API may use email, user_email, or embed in created_by).
+ */
+function emGetCsEventAuthorEmail(event)
+{
+	if (!event) {
+		return '';
+	}
+	var e = event.email || event.user_email || event.author_email;
+	if (e) {
+		return String(e);
+	}
+	if (event.created_by && /@/.test(String(event.created_by))) {
+		var m = String(event.created_by).match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
+		if (m) {
+			return m[0];
+		}
+	}
+	return '';
 }
 
 function emEscapeHtml(text)

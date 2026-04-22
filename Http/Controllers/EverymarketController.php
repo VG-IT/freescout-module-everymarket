@@ -272,7 +272,8 @@ class EverymarketController extends Controller
                         $request->order_request_id,
                         $request->note,
                         $request->user_email ?? null,
-                        $mailbox
+                        $mailbox,
+                        $request->resolution_type ?? null
                     );
                     
                     if (!empty($api_result['error'])) {
@@ -298,6 +299,51 @@ class EverymarketController extends Controller
                     $response['msg'] = __('API is not enabled');
                 }
                 
+                break;
+
+            case 'delete_cs_request_event':
+                $response['status'] = 'error';
+
+                $user = auth()->user();
+                if (!$user) {
+                    $response['msg'] = __('Not authorized');
+                    break;
+                }
+
+                $mailbox = null;
+                if ($request->mailbox_id) {
+                    $mailbox = Mailbox::find($request->mailbox_id);
+                }
+
+                if (empty($request->order_number) || empty($request->order_request_id) || $request->event_id === null || $request->event_id === '') {
+                    $response['msg'] = 'Missing required fields';
+                    break;
+                }
+
+                $mailbox_api_enabled = \Everymarket::isMailboxApiEnabled($mailbox);
+
+                if (\Everymarket::isApiEnabled() || $mailbox_api_enabled) {
+                    $api_result = \Everymarket::apiDeleteCsRequestEvent(
+                        $request->order_number,
+                        $request->order_request_id,
+                        $request->event_id,
+                        $user->email,
+                        $mailbox
+                    );
+
+                    if (!empty($api_result['error'])) {
+                        $response['status'] = 'error';
+                        $response['msg'] = $api_result['error'];
+                        \Log::error('[Everymarket] Failed to delete CS request event: '.$api_result['error']);
+                    } else {
+                        $response['status'] = 'success';
+                        $response['msg'] = __('Note deleted');
+                    }
+                } else {
+                    $response['status'] = 'error';
+                    $response['msg'] = __('API is not enabled');
+                }
+
                 break;
 
             case 'close_cs_request':
