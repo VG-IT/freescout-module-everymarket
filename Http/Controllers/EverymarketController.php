@@ -284,15 +284,11 @@ class EverymarketController extends Controller
                         $response['status'] = 'success';
                         $response['msg'] = __('Note added successfully');
 
-                        $user = auth()->user();
                         $conversation = Conversation::find($request->conversation_id);
-                        if(!$conversation->isRequestedByUser($user->id)) {
-                            $conversation->requestedBy($user);
+                        if ($conversation) {
+                            \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
+                            $conversation->setMeta('custom_fields.cs_request_status', 'waiting_reply', true);
                         }
-
-                        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'CS Request Status', 'waiting_reply');
-                        $conversation->setMeta('custom_fields.cs_request_status', 'waiting_reply', true);
-                        // Cache update will be handled by frontend after appending the event
                     }
                 } else {
                     $response['status'] = 'error';
