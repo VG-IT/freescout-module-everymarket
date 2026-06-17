@@ -10,3 +10,9 @@ Route::group(['middleware' => 'web', 'prefix' => \Helper::getSubdirectory(), 'na
     Route::get('/customers/{id}/cs_requests', ['uses' => 'EverymarketController@customersCsRequests', 'middleware' => ['auth', 'roles'], 'roles' => ['admin']])->name('customers.cs_requests');
 
 });
+
+Route::group(['prefix' => \Helper::getSubdirectory(), 'namespace' => 'Modules\Everymarket\Http\Controllers'], function()
+{
+    Route::get('/everymarket/api/conversation-stats', 'ConversationStatsApiController@index')
+        ->name('everymarket.api.conversation_stats');
+});

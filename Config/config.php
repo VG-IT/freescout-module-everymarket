@@ -6,4 +6,5 @@ return [
     'api_domain' => env('EM_API_DOMAIN', ''),
     'access_token' => env('EM_ACCESS_TOKEN', ''),
     'api_version' => env('EM_API_VERSION', 'v1'),
+    'stats_api_token' => env('EM_STATS_API_TOKEN', ''),
 ];
