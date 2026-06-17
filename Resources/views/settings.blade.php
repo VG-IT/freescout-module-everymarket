@@ -62,19 +62,6 @@
         </div>
     </div>
 
-    <div class="form-group">
-        <label class="col-sm-2 control-label">{{ __('Conversation Stats API Token') }}</label>
-
-        <div class="col-sm-6">
-            <input type="text" class="form-control input-sized-lg" name="settings[everymarket.stats_api_token]" value="{{ $settings['everymarket.stats_api_token'] }}" autocomplete="off">
-            <p class="form-help">
-                {{ __('Used to authenticate GET requests to') }}
-                <code>/everymarket/api/conversation-stats</code>.
-                {{ __('Send via header') }} <code>X-Everymarket-Api-Token</code> {{ __('or') }} <code>Authorization: Bearer</code>.
-            </p>
-        </div>
-    </div>
-
     <div class="form-group margin-top margin-bottom">
         <div class="col-sm-6 col-sm-offset-2">
             <button type="submit" class="btn btn-primary">

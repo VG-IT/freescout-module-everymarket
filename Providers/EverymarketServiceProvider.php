@@ -90,9 +90,6 @@ class EverymarketServiceProvider extends ServiceProvider
                 'everymarket.api_version' => [
                     'env' => 'EM_API_VERSION',
                 ],
-                'everymarket.stats_api_token' => [
-                    'env' => 'EM_STATS_API_TOKEN',
-                ],
             ];
 
             // Validation.
@@ -123,7 +120,6 @@ class EverymarketServiceProvider extends ServiceProvider
             $settings['everymarket.api_domain'] = config('everymarket.api_domain');
             $settings['everymarket.access_token'] = config('everymarket.access_token');
             $settings['everymarket.api_version'] = config('everymarket.api_version');
-            $settings['everymarket.stats_api_token'] = config('everymarket.stats_api_token');
 
             $mailboxes_enabled = \Auth::user()->mailboxesCanView(true);
             foreach ($mailboxes_enabled as $i => $mailbox) {
