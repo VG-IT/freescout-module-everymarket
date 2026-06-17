@@ -27,6 +27,7 @@ class EverymarketController extends Controller
                 'everymarket.api_domain' => $settings['api_domain'] ?? '',
                 'everymarket.access_token' => $settings['access_token'] ?? '',
                 'everymarket.api_version' => $settings['api_version'] ?? '',
+                'everymarket.stats_api_token' => $settings['stats_api_token'] ?? '',
             ],
             'mailbox' => $mailbox
         ]);
