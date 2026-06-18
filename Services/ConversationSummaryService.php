@@ -88,6 +88,7 @@ class ConversationSummaryService
             'assigned_to'           => $assignedTo,
             'conversation_type'     => $typeName,
             'threads_count'         => (int) $conversation->threads_count,
+            'started_at'            => $replyMetrics['started_at'],
             'first_reply_at'        => $replyMetrics['first_reply_at'],
             'first_reply_seconds'   => $replyMetrics['first_reply_seconds'],
             'latest_reply_at'       => $replyMetrics['latest_reply_at'],
@@ -227,6 +228,7 @@ class ConversationSummaryService
         }
 
         return [
+            'started_at'          => $startedAt ? $startedAt->toIso8601String() : null,
             'first_reply_at'      => $firstReplyAt ? $firstReplyAt->toIso8601String() : null,
             'first_reply_seconds' => $firstReplySeconds,
             'latest_reply_at'     => $latestReplyAt ? \Carbon\Carbon::parse($latestReplyAt)->toIso8601String() : null,
