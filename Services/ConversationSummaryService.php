@@ -84,7 +84,7 @@ class ConversationSummaryService
             'conversation_id'       => (int) $conversation->id,
             'customer_email'        => (string) ($conversation->customer_email ?: optional($conversation->customer)->getMainEmail()),
             'subject'               => (string) ($conversation->subject ?? ''),
-            'conversation_started'  => $conversation->created_at ? $conversation->created_at->toIso8601String() : null,
+            'conversation_created'  => $conversation->created_at ? $conversation->created_at->toIso8601String() : null,
             'assigned_to'           => $assignedTo,
             'conversation_type'     => $typeName,
             'threads_count'         => (int) $conversation->threads_count,
