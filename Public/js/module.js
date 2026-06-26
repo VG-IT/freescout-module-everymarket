@@ -199,6 +199,97 @@ function emCsNoteFieldReset($textarea) {
 }
 
 /**
+ * Strip rich formatting from CS note HTML; keep plain paragraphs and file links.
+ */
+function emCsNoteClearAllFormatting(html) {
+	if (!html || emCsNoteHtmlIsEmpty(html)) {
+		return '<div><br></div>';
+	}
+	var linkPlaceholders = [];
+	var withPlaceholders = html.replace(/<a\s+[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, function(match, href, inner) {
+		var idx = linkPlaceholders.length;
+		var text = $('<div>').html(inner).text().trim() || href;
+		linkPlaceholders.push({ href: href, text: text });
+		return '\n[[LINK:' + idx + ']]\n';
+	});
+	var $tmp = $('<div>').html(withPlaceholders);
+	$tmp.find('br').replaceWith('\n');
+	$tmp.find('p,div,li').each(function() {
+		$(this).append('\n');
+	});
+	var plain = $tmp.text().replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n');
+	var lines = plain.split('\n');
+	var blocks = [];
+	for (var i = 0; i < lines.length; i++) {
+		var line = lines[i].trim();
+		if (!line) {
+			continue;
+		}
+		var linkOnly = line.match(/^\[\[LINK:(\d+)\]\]$/);
+		if (linkOnly) {
+			var link = linkPlaceholders[parseInt(linkOnly[1], 10)];
+			if (link) {
+				var safeUrl = String(link.href).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+				blocks.push('<div><a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + emEscapeHtml(link.text) + '</a></div>');
+			}
+			continue;
+		}
+		line = line.replace(/\[\[LINK:(\d+)\]\]/g, function(m, idx) {
+			var lnk = linkPlaceholders[parseInt(idx, 10)];
+			if (!lnk) {
+				return '';
+			}
+			var url = String(lnk.href).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+			return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + emEscapeHtml(lnk.text) + '</a>';
+		});
+		if (/<a /.test(line)) {
+			blocks.push('<div>' + line + '</div>');
+		} else {
+			blocks.push('<div>' + emEscapeHtml(line) + '</div>');
+		}
+	}
+	return blocks.length ? blocks.join('') : '<div><br></div>';
+}
+
+/** Paste clipboard content as plain text (no font/size/color from source). */
+function emCsNotePasteAsPlainText(e) {
+	var evt = e.originalEvent || e;
+	var clipboard = evt.clipboardData || window.clipboardData;
+	if (!clipboard) {
+		return;
+	}
+	var bufferText = clipboard.getData('text/plain');
+	if (bufferText === null || bufferText === '') {
+		bufferText = clipboard.getData('Text');
+	}
+	if (bufferText !== null && bufferText !== '') {
+		e.preventDefault();
+		document.execCommand('insertText', false, bufferText);
+	}
+}
+
+/**
+ * Summernote toolbar: clear all formatting in the note (keeps links).
+ */
+function emCsNoteClearAllFormatButton(context) {
+	var ui = $.summernote.ui;
+	var tooltip = (typeof Lang !== 'undefined' && Lang.get)
+		? Lang.get('messages.remove_format')
+		: 'Clear formatting';
+
+	return ui.button({
+		contents: '<i class="glyphicon glyphicon-erase"></i>',
+		tooltip: tooltip,
+		className: 'note-btn-em-cs-clear-format',
+		container: 'body',
+		click: function() {
+			var $note = context.layoutInfo.note;
+			$note.summernote('code', emCsNoteClearAllFormatting($note.summernote('code')));
+		}
+	}).render();
+}
+
+/**
  * Append uploaded file as a linked file name only (no image preview in Summernote).
  */
 function emCsNoteAppendFileLink($ta, fileName, url) {
@@ -318,6 +409,16 @@ function emInitCsNoteEditors() {
 	if (typeof $.summernote === 'undefined') {
 		return;
 	}
+	var csNoteButtons = {
+		emCsAttach: emCsNoteAttachmentButton,
+		emCsClearFormat: emCsNoteClearAllFormatButton
+	};
+	var csNoteStyleButtons = ['emCsAttach', 'bold', 'italic', 'underline', 'color'];
+	if (typeof EditorRemoveFormatButton !== 'undefined') {
+		csNoteButtons.removeformat = EditorRemoveFormatButton;
+		csNoteStyleButtons.push('removeformat');
+	}
+	csNoteStyleButtons.push('emCsClearFormat');
 	$('#em-order-panel textarea.em-cs-note-editor, #em-order-details-content textarea.em-cs-note-editor').each(function() {
 		var $ta = $(this);
 		if ($ta.next('.note-editor').length) {
@@ -331,19 +432,22 @@ function emInitCsNoteEditors() {
 			disableDragAndDrop: true,
 			placeholder: $ta.attr('placeholder') || '',
 			toolbar: [
-				['style', ['emCsAttach', 'bold', 'italic', 'underline', 'color']],
+				['style', csNoteStyleButtons],
 				['para', ['ul', 'ol']],
 				['insert', ['link', 'picture']]
 			],
-			buttons: {
-				emCsAttach: emCsNoteAttachmentButton
-			},
+			buttons: csNoteButtons,
 			callbacks: {
 				onInit: function () {
 					if (typeof fsApplySummernoteDefaultTextColor === 'function') {
 						fsApplySummernoteDefaultTextColor($ta);
 					}
+					var $editable = $ta.next('.note-editor').find('.note-editable');
+					if ($editable.length) {
+						$editable.css({ 'font-size': '13px', 'line-height': '1.5' });
+					}
 				},
+				onPaste: emCsNotePasteAsPlainText,
 				onImageUpload: function(files) {
 					if (!files) {
 						return;
