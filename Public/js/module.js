@@ -1392,7 +1392,7 @@ function emBuildOrderDetailsHTML(order, includeCsRequests)
 
 	html += '<div class="em-detail-row">';
 	html += '<div class="em-detail-label">Order Placed</div>';
-	html += '<div class="em-detail-value">' + emFormatDate(order.created_at) + '</div>';
+	html += '<div class="em-detail-value">' + emFormatDate(order.completed_at || order.created_at) + '</div>';
 	html += '</div>';
 
 	html += '<div class="em-detail-row">';

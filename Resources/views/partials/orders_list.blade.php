@@ -30,7 +30,7 @@
                                 <span class="pull-right">{{ $order['currency'] }} {{ $order['total'] }}</span>
                             </div>
                             <div>
-                                <small class="text-help">{{ \Everymarket::formatDate($order['created_at']) }}</small>
+                                <small class="text-help">{{ \Everymarket::formatDate($order['completed_at'] ?? $order['created_at']) }}</small>
                                 <small class="pull-right @if (in_array($order['payment_state'] ?? '', ['paid', 'refunded', 'partially_refunded'])) text-success @else text-warning @endif ">
                                     {{ __(ucfirst(str_replace('_', ' ', $order['payment_state'] ?? 'pending'))) }}
                                 </small>
