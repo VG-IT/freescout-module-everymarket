@@ -273,9 +273,7 @@ function emCsNotePasteAsPlainText(e) {
  */
 function emCsNoteClearAllFormatButton(context) {
 	var ui = $.summernote.ui;
-	var tooltip = (typeof Lang !== 'undefined' && Lang.get)
-		? Lang.get('messages.remove_format')
-		: 'Clear formatting';
+	var tooltip = 'Clear all formatting';
 
 	return ui.button({
 		contents: '<i class="glyphicon glyphicon-erase"></i>',
@@ -413,12 +411,6 @@ function emInitCsNoteEditors() {
 		emCsAttach: emCsNoteAttachmentButton,
 		emCsClearFormat: emCsNoteClearAllFormatButton
 	};
-	var csNoteStyleButtons = ['emCsAttach', 'bold', 'italic', 'underline', 'color'];
-	if (typeof EditorRemoveFormatButton !== 'undefined') {
-		csNoteButtons.removeformat = EditorRemoveFormatButton;
-		csNoteStyleButtons.push('removeformat');
-	}
-	csNoteStyleButtons.push('emCsClearFormat');
 	$('#em-order-panel textarea.em-cs-note-editor, #em-order-details-content textarea.em-cs-note-editor').each(function() {
 		var $ta = $(this);
 		if ($ta.next('.note-editor').length) {
@@ -432,7 +424,7 @@ function emInitCsNoteEditors() {
 			disableDragAndDrop: true,
 			placeholder: $ta.attr('placeholder') || '',
 			toolbar: [
-				['style', csNoteStyleButtons],
+				['style', ['emCsAttach', 'bold', 'italic', 'underline', 'color', 'emCsClearFormat']],
 				['para', ['ul', 'ol']],
 				['insert', ['link', 'picture']]
 			],
