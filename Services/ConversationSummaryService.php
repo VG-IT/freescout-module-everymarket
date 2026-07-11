@@ -128,6 +128,25 @@ class ConversationSummaryService
 
     protected function conversationIdsForOrderNumber(string $orderNumber): Collection
     {
+        $matched = $this->matchOrderNumberConversationIds($orderNumber);
+        if ($matched->isEmpty()) {
+            return collect();
+        }
+
+        return Conversation::query()
+            ->whereIn('id', $matched->all())
+            ->where('state', Conversation::STATE_PUBLISHED)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->pluck('id');
+    }
+
+    /**
+     * Get IDs of conversations (any state) whose Order Number custom field
+     * matches the passed order number.
+     */
+    public function matchOrderNumberConversationIds(string $orderNumber): Collection
+    {
         $ccfTable = $this->conversationCustomFieldTable();
         if (!$ccfTable || !Schema::hasTable('custom_fields')) {
             return collect();
@@ -171,16 +190,7 @@ class ConversationSummaryService
             }
         }
 
-        if (empty($matched)) {
-            return collect();
-        }
-
-        return Conversation::query()
-            ->whereIn('id', array_unique($matched))
-            ->where('state', Conversation::STATE_PUBLISHED)
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->pluck('id');
+        return collect(array_unique($matched));
     }
 
     protected function getOrderNumberForConversation(Conversation $conversation): string

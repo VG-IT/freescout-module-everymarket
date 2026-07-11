@@ -359,6 +359,19 @@ class EverymarketServiceProvider extends ServiceProvider
                 echo 'em-conv-outgoing-failed';
             }
         }, 25, 1);
+
+        // Fast path for searching conversations by email or EM order number.
+        \Eventy::addFilter('search.conversations.perform', function ($result, $q, $filters, $user) {
+            if ($result !== '') {
+                return $result;
+            }
+            try {
+                return \Modules\Everymarket\Services\ConversationSearchOptimizer::perform($q, $filters, $user);
+            } catch (\Throwable $e) {
+                \Log::warning('[Everymarket] Search fast path failed: '.$e->getMessage());
+                return $result;
+            }
+        }, 10, 4);
     }
 
     /**
