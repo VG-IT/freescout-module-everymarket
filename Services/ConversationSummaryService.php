@@ -148,8 +148,19 @@ class ConversationSummaryService
 
         $target = $variants[0];
 
+        // Filter by value in SQL (using the [custom_field_id, value] index)
+        // instead of scanning the whole table and normalizing in PHP.
+        // Stored values may have a leading '#'; case differences are covered
+        // by the DB collation and the lowercase variants.
+        $valueVariants = [];
+        foreach (array_unique([$target, mb_strtolower($target)]) as $variant) {
+            $valueVariants[] = $variant;
+            $valueVariants[] = '#'.$variant;
+        }
+
         $rows = DB::table($ccfTable)
             ->whereIn('custom_field_id', $fieldIds)
+            ->whereIn('value', $valueVariants)
             ->get(['conversation_id', 'value']);
 
         $matched = [];
