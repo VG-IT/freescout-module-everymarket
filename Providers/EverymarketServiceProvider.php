@@ -1135,6 +1135,10 @@ class EverymarketServiceProvider extends ServiceProvider
     public function register()
     {
         $this->registerTranslations();
+
+        $this->commands([
+            \Modules\Everymarket\Console\AuditFetchedEmails::class,
+        ]);
     }
 
     /**
