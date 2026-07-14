@@ -1166,6 +1166,7 @@ class EverymarketServiceProvider extends ServiceProvider
         $this->commands([
             \Modules\Everymarket\Console\AuditFetchedEmails::class,
             \Modules\Everymarket\Console\RepairThreadBodies::class,
+            \Modules\Everymarket\Console\ActivateRepairedConversations::class,
         ]);
     }
 
