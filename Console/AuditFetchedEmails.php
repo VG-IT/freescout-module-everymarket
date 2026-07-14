@@ -22,7 +22,8 @@ class AuditFetchedEmails extends Command
         {--days=3 : Audit the last N days (used when --after is not set)}
         {--folders= : Comma separated IMAP folders (defaults to mailbox fetch folders)}
         {--csv= : Write the report to a CSV file}
-        {--import : Import missing emails via freescout:fetch-emails and re-verify}';
+        {--import : Import missing emails via freescout:fetch-emails and re-verify}
+        {--find= : Trace what happens to a specific Message-ID (substring match) during the scan}';
 
     protected $description = 'Find emails on the IMAP server which have no thread record in the DB';
 
@@ -86,25 +87,41 @@ class AuditFetchedEmails extends Command
                 continue;
             }
 
-            $this->line('Scanning folder: '.$folder_name);
-
-            $page_size = (int) config('app.fetching_bunch_size') ?: 100;
-            $page = 0;
-            do {
-                // IMAP SINCE/BEFORE have day granularity in the server's
-                // timezone, so the range is padded and re-filtered precisely
-                // below by the Date header.
-                $query = $folder->query()
+            // IMAP SINCE/BEFORE have day granularity in the server's
+            // timezone, so the range is padded and re-filtered precisely
+            // below by the Date header.
+            $buildQuery = function () use ($folder, $after, $before) {
+                return $folder->query()
                     ->since($after->copy()->subDay())
                     ->before($before->copy()->addDays(2))
                     ->leaveUnread()
                     ->setFetchBody(false);
+            };
+
+            // Determine the number of pages upfront: the message collection
+            // is keyed by Message-ID, so duplicate IDs within a page shrink
+            // its count and would end a count-based do/while loop early.
+            $total = $buildQuery()->count();
+            $page_size = (int) config('app.fetching_bunch_size') ?: 100;
+            $pages = (int) ceil($total / $page_size);
+
+            $this->line('Scanning folder: '.$folder_name.' ('.$total.' messages on server in padded range)');
+
+            $scanned = 0;
+            for ($page = 1; $page <= $pages; $page++) {
+                $query = $buildQuery();
                 $query->limit($page_size, $page);
 
                 $messages = $query->get();
 
                 foreach ($messages as $message_id => $message) {
+                    $scanned++;
                     $message_id = trim((string) $message_id);
+
+                    $trace = $this->option('find')
+                        && $message_id !== ''
+                        && mb_stripos($message_id, $this->option('find')) !== false;
+
                     if ($message_id === '') {
                         // Threads for emails without a Message-ID get an
                         // artificial one and can not be compared.
@@ -114,14 +131,24 @@ class AuditFetchedEmails extends Command
 
                     $date = $this->attrToDate($message->getDate());
                     if ($date && ($date->lt($after) || $date->gt($before))) {
+                        if ($trace) {
+                            $this->info('[find] '.$message_id.' seen in '.$folder_name.' but Date header '.$date->toDateTimeString().' is outside the range.');
+                        }
                         continue;
                     }
 
                     $from = $this->firstEmail($message->getFrom());
                     if ($from && in_array($from, $own_emails)) {
                         // Outgoing copy sent by the helpdesk itself.
+                        if ($trace) {
+                            $this->info('[find] '.$message_id.' seen in '.$folder_name.' but skipped: From is the mailbox itself ('.$from.').');
+                        }
                         $skipped_own++;
                         continue;
+                    }
+
+                    if ($trace) {
+                        $this->info('[find] '.$message_id.' seen in '.$folder_name.', added as candidate.');
                     }
 
                     $candidates[mb_strtolower($message_id)] = [
@@ -133,9 +160,24 @@ class AuditFetchedEmails extends Command
                         'prev_ids'   => $this->getPrevMessageIds($message),
                     ];
                 }
+            }
 
-                $page++;
-            } while (count($messages) == $page_size);
+            if ($scanned != $total) {
+                $this->error('Warning: scanned '.$scanned.' of '.$total.' messages in '.$folder_name.' (duplicate Message-IDs collapse in a page) - counts may be approximate.');
+            }
+        }
+
+        if ($this->option('find')) {
+            $key = null;
+            foreach ($candidates as $k => $info) {
+                if (mb_stripos($info['message_id'], $this->option('find')) !== false) {
+                    $key = $k;
+                    break;
+                }
+            }
+            if (!$key) {
+                $this->error('[find] "'.$this->option('find').'" was NOT seen in the scanned folders/range. The message is probably archived, deleted or in another folder - try --folders="[Gmail]/All Mail".');
+            }
         }
 
         $this->line('Emails on server in range: '.count($candidates)
