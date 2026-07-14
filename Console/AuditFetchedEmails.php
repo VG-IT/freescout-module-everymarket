@@ -177,6 +177,14 @@ class AuditFetchedEmails extends Command
             }
             if (!$key) {
                 $this->error('[find] "'.$this->option('find').'" was NOT seen in the scanned folders/range. The message is probably archived, deleted or in another folder - try --folders="[Gmail]/All Mail".');
+            } else {
+                $this->line('[find] DB connection: '.config('database.default').' / '.config('database.connections.'.config('database.default').'.host').' / '.\DB::connection()->getDatabaseName());
+                $thread = Thread::where('message_id', $candidates[$key]['message_id'])->first();
+                if ($thread) {
+                    $this->info('[find] DB: thread #'.$thread->id.' in conversation #'.$thread->conversation_id.' (created '.$thread->created_at.') has this Message-ID - not missing.');
+                } else {
+                    $this->error('[find] DB: NO thread with this Message-ID - it must appear in the missing list below.');
+                }
             }
         }
 

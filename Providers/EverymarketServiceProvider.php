@@ -360,6 +360,33 @@ class EverymarketServiceProvider extends ServiceProvider
             }
         }, 25, 1);
 
+        // Yahoo iOS (and similar clients) put the customer's new text BEFORE
+        // a nested <html> document containing the quoted original.
+        // separateReply() keeps only <html>...</html> blocks, so the new text
+        // gets lost and only the quoted history is saved as the thread body.
+        // When real content precedes the first <html> tag, strip the nested
+        // html/head/body tags so the whole message is processed as one document.
+        \Eventy::addFilter('fetch_emails.separate_reply.preprocess_body', function ($body) {
+            try {
+                if (!is_string($body) || $body === '') {
+                    return $body;
+                }
+                $pos = mb_stripos($body, '<html');
+                if ($pos === false || $pos === 0) {
+                    return $body;
+                }
+                $prefix_text = trim(\Helper::htmlToText(mb_substr($body, 0, $pos)));
+                if ($prefix_text === '') {
+                    return $body;
+                }
+                $body = preg_replace('/<head[^>]*>.*?<\/head>/is', '', $body);
+                $body = preg_replace('/<\/?(html|body)[^>]*>/i', '', $body);
+            } catch (\Throwable $e) {
+                // On any failure keep the original body.
+            }
+            return $body;
+        }, 20, 1);
+
         // Fast path for searching conversations by email or EM order number.
         \Eventy::addFilter('search.conversations.perform', function ($result, $q, $filters, $user) {
             if ($result !== '') {
@@ -1138,6 +1165,7 @@ class EverymarketServiceProvider extends ServiceProvider
 
         $this->commands([
             \Modules\Everymarket\Console\AuditFetchedEmails::class,
+            \Modules\Everymarket\Console\RepairThreadBodies::class,
         ]);
     }
 
