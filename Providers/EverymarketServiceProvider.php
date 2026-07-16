@@ -1167,6 +1167,7 @@ class EverymarketServiceProvider extends ServiceProvider
             \Modules\Everymarket\Console\AuditFetchedEmails::class,
             \Modules\Everymarket\Console\RepairThreadBodies::class,
             \Modules\Everymarket\Console\ActivateRepairedConversations::class,
+            \Modules\Everymarket\Console\FetchGmailConversation::class,
         ]);
     }
 
