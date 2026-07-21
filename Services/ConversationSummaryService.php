@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Schema;
 class ConversationSummaryService
 {
     const ORDER_NUMBER_FIELD = 'Order Number';
+    const THREAD_PREVIEW_LENGTH = 100;
 
     /**
      * Find conversations by Order Number custom field value.
@@ -94,7 +95,36 @@ class ConversationSummaryService
             'latest_reply_at'       => $replyMetrics['latest_reply_at'],
             'order_number'          => $orderNumber,
             'status'                => $conversation->getStatusName(),
+            'threads'               => $this->getThreadsSummary($conversation),
         ];
+    }
+
+    /**
+     * Chronological list of the conversation's threads, body truncated to
+     * THREAD_PREVIEW_LENGTH characters of plain text.
+     */
+    protected function getThreadsSummary(Conversation $conversation): array
+    {
+        $threads = $conversation->threads()
+            ->whereIn('type', [Thread::TYPE_CUSTOMER, Thread::TYPE_MESSAGE, Thread::TYPE_NOTE])
+            ->where('state', Thread::STATE_PUBLISHED)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get(['id', 'type', 'from', 'body', 'created_at', 'created_by_user_id', 'created_by_customer_id']);
+
+        return $threads->map(function (Thread $thread) {
+            $text = trim(\Helper::htmlToText($thread->body ?? ''));
+            $truncated = mb_strlen($text) > self::THREAD_PREVIEW_LENGTH;
+
+            return [
+                'thread_id'  => (int) $thread->id,
+                'type'       => Thread::$types[$thread->type] ?? (string) $thread->type,
+                'from'       => (string) ($thread->from ?? ''),
+                'created_at' => $thread->created_at ? $thread->created_at->toIso8601String() : null,
+                'body'       => mb_substr($text, 0, self::THREAD_PREVIEW_LENGTH).($truncated ? '...' : ''),
+                'truncated'  => $truncated,
+            ];
+        })->values()->all();
     }
 
     /**
