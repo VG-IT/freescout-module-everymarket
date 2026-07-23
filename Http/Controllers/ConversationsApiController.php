@@ -6,6 +6,7 @@ use App\Conversation;
 use App\Customer;
 use App\Thread;
 use App\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,9 @@ class ConversationsApiController extends Controller
      * Query: status=active|pending|closed|spam (optional, repeatable as status[]=)
      *        mailbox_id=... (optional)
      *        folder_id=... (optional)
+     *        modified_since=... (optional, ISO 8601; alias: modifiedSince) —
+     *            only conversations updated at/after this time, ordered oldest
+     *            modified first for incremental polling
      *        page=1 (optional, default 1)
      *        page_size=50 (optional, default 50, max 100)
      *
@@ -43,6 +47,19 @@ class ConversationsApiController extends Controller
             ], 400);
         }
 
+        $modifiedSince = null;
+        $modifiedSinceRaw = $request->query('modified_since', $request->query('modifiedSince'));
+        if ($modifiedSinceRaw) {
+            try {
+                $modifiedSince = Carbon::parse($modifiedSinceRaw);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'msg'    => __('Invalid modified_since, use ISO 8601 format, e.g. 2026-07-01T00:00:00Z'),
+                ], 400);
+            }
+        }
+
         $page = max(1, (int) $request->query('page', 1));
         $pageSize = (int) $request->query('page_size', self::DEFAULT_PAGE_SIZE);
         if ($pageSize < 1) {
@@ -51,9 +68,19 @@ class ConversationsApiController extends Controller
         $pageSize = min($pageSize, self::MAX_PAGE_SIZE);
 
         $query = Conversation::query()
-            ->where('state', Conversation::STATE_PUBLISHED)
-            ->orderByDesc('created_at')
-            ->orderByDesc('id');
+            ->where('state', Conversation::STATE_PUBLISHED);
+
+        if ($modifiedSince) {
+            // Oldest-modified-first with a stable (updated_at, id) order, so a
+            // client polling page by page won't skip conversations that get
+            // modified again while it is paging through the result set.
+            $query->where('updated_at', '>=', $modifiedSince)
+                ->orderBy('updated_at')
+                ->orderBy('id');
+        } else {
+            $query->orderByDesc('created_at')
+                ->orderByDesc('id');
+        }
 
         if (!empty($statuses)) {
             $query->whereIn('status', $statuses);
@@ -166,6 +193,7 @@ class ConversationsApiController extends Controller
             'customerId'    => $conversation->customer_id ? (int) $conversation->customer_id : null,
             'createdAt'     => $conversation->created_at ? $conversation->created_at->toIso8601String() : null,
             'closedAt'      => $conversation->closed_at ? $conversation->closed_at->toIso8601String() : null,
+            'updatedAt'     => $conversation->updated_at ? $conversation->updated_at->toIso8601String() : null,
             'userUpdatedAt' => $conversation->user_updated_at ? $conversation->user_updated_at->toIso8601String() : null,
             'customer'      => $this->customerToArray($conversation->customer, $conversation->customer_email),
             'assignee'      => $this->userToArray($conversation->user),
