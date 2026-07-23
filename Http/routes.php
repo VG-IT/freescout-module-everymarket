@@ -15,4 +15,11 @@ Route::group(['prefix' => \Helper::getSubdirectory(), 'namespace' => 'Modules\Ev
 {
     Route::get('/everymarket/api/conversation-stats', 'ConversationStatsApiController@index')
         ->name('everymarket.api.conversation_stats');
+
+    Route::get('/everymarket/api/conversations', 'ConversationsApiController@index')
+        ->name('everymarket.api.conversations');
+
+    Route::get('/everymarket/api/conversations/{id}', 'ConversationsApiController@show')
+        ->where('id', '[0-9]+')
+        ->name('everymarket.api.conversations.show');
 });
