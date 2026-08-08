@@ -887,7 +887,7 @@ class EverymarketServiceProvider extends ServiceProvider
         $api_info = self::getApiInfo($mailbox);
         $url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . urlencode($order_number) . '/onway?token=' . $api_info["access_token"];
 
-        $result = self::makeEverymarketApiCall($url);
+        $result = self::makeEverymarketApiCall($url, null, null, self::bearerAuthHeader());
 
         if (!empty($result['error'])) {
             \Log::warning('[Everymarket] apiGetOrderOnway error: ' . $result['error']);
@@ -911,7 +911,7 @@ class EverymarketServiceProvider extends ServiceProvider
         $api_info = self::getApiInfo($mailbox);
         $url = $api_info["api_url"] . '/api/' . $api_info["api_version"] . '/orders/' . urlencode($order_number) . '/shipments_detail?token=' . $api_info["access_token"];
 
-        $result = self::makeEverymarketApiCall($url);
+        $result = self::makeEverymarketApiCall($url, null, null, self::bearerAuthHeader());
 
         if (!empty($result['error'])) {
             \Log::warning('[Everymarket] apiGetOrderShipmentsDetail error: ' . $result['error']);
@@ -1104,7 +1104,22 @@ class EverymarketServiceProvider extends ServiceProvider
      * @param string|null $http_method 'GET' (default when no body), 'POST', or 'DELETE'
      * @return array Response array with 'error' and 'data' keys
      */
-    private static function makeEverymarketApiCall($url, $post_data = null, $http_method = null)
+    /**
+     * Build the Authorization: Bearer header from the project ENV (EM_BEARER_TOKEN).
+     * Returns an empty array when no token is configured.
+     */
+    private static function bearerAuthHeader()
+    {
+        $token = (string) config('everymarket.bearer_token', '');
+
+        if ($token === '') {
+            return [];
+        }
+
+        return ['Authorization: Bearer ' . $token];
+    }
+
+    private static function makeEverymarketApiCall($url, $post_data = null, $http_method = null, $extra_headers = [])
     {
         $response = ['error' => '', 'data' => []];
 
@@ -1112,9 +1127,9 @@ class EverymarketServiceProvider extends ServiceProvider
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             \Helper::setCurlDefaultOptions($ch);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge([
                 'Content-Type: application/json'
-            ]);
+            ], $extra_headers));
             curl_setopt($ch, CURLOPT_USERAGENT, config('app.curl_user_agent') ?: 'FreeScout-Everymarket-Integration');
             curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
