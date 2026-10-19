@@ -4,6 +4,8 @@ namespace Modules\Everymarket\Http\Controllers;
 
 use App\Conversation;
 use App\Customer;
+use App\Events\UserAddedNote;
+use App\Events\UserReplied;
 use App\Thread;
 use App\User;
 use Carbon\Carbon;
@@ -18,6 +20,7 @@ class ConversationsApiController extends Controller
 
     const DEFAULT_PAGE_SIZE = 50;
     const MAX_PAGE_SIZE = 100;
+    const MAX_REPLY_LENGTH = 10000;
 
     /**
      * GET /everymarket/api/conversations
@@ -150,6 +153,129 @@ class ConversationsApiController extends Controller
     }
 
     /**
+     * POST /everymarket/api/conversations/{id}/reply
+     *
+     * Sends a reply to the customer on behalf of a seller in EM Ops.
+     *
+     * Body (JSON or form): body        - required, plain text, max 10000 chars
+     *                      seller_name - required, store name for the audit note
+     *                      sent_by     - optional, EM Ops user email for the audit note
+     *
+     * The reply is sent as the FreeScout user EM_SELLER_REPLY_USER_ID through the
+     * same path as a reply from the web UI, so the customer gets the normal email
+     * (after the usual undo delay). An internal note records which seller sent it.
+     * A closed conversation is reopened as active so the CS team sees it again;
+     * any other status is left as it is.
+     *
+     * Auth: EM_REPLY_API_TOKEN in header X-Everymarket-Api-Token or
+     *       Authorization: Bearer <token> (the query string is not accepted).
+     */
+    public function reply(Request $request, $id)
+    {
+        if (!$this->isAuthorizedForWrite($request)) {
+            return $this->unauthorizedResponse();
+        }
+
+        $user = User::where('id', (int) config('everymarket.seller_reply_user_id'))
+            ->where('status', User::STATUS_ACTIVE)
+            ->first();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('Seller replies are not configured'),
+            ], 503);
+        }
+
+        $body = trim((string) $request->input('body', ''));
+        $seller_name = trim((string) $request->input('seller_name', ''));
+        $sent_by = trim((string) $request->input('sent_by', ''));
+
+        if ($body === '' || $seller_name === '') {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('body and seller_name are required'),
+            ], 422);
+        }
+        if (mb_strlen($body) > self::MAX_REPLY_LENGTH) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('body is too long (max :max characters)', ['max' => self::MAX_REPLY_LENGTH]),
+            ], 422);
+        }
+
+        $conversation = Conversation::where('state', Conversation::STATE_PUBLISHED)
+            ->with(['customer', 'mailbox'])
+            ->find((int) $id);
+
+        if (!$conversation) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('Conversation not found'),
+            ], 404);
+        }
+        if ($conversation->status == Conversation::STATUS_SPAM || !$conversation->customer_email) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('This conversation can not be replied to'),
+            ], 422);
+        }
+
+        if ($conversation->status == Conversation::STATUS_CLOSED) {
+            $conversation->changeStatus(Conversation::STATUS_ACTIVE, $user);
+        }
+
+        // Same conversation fields the web UI's send_reply sets for a reply.
+        $now = date('Y-m-d H:i:s');
+        $conversation->last_reply_at = $now;
+        $conversation->last_reply_from = Conversation::PERSON_USER;
+        $conversation->user_updated_at = $now;
+        $conversation->updateFolder();
+        $conversation->save();
+
+        $html = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+        $thread = $this->createUserThread($conversation, $user, $html, Thread::TYPE_MESSAGE);
+
+        $note = __('Reply sent by seller :seller from EM Ops', ['seller' => $seller_name]);
+        if ($sent_by !== '') {
+            $note .= ' ('.$sent_by.')';
+        }
+        $this->createUserThread($conversation, $user, htmlspecialchars($note, ENT_QUOTES, 'UTF-8'), Thread::TYPE_NOTE);
+
+        return response()->json($this->threadToArray($thread->fresh(['created_by_user'])), 201);
+    }
+
+    /**
+     * Mirrors Conversation::createUserThread(), which doesn't return the
+     * thread it creates. Firing UserReplied queues the email to the customer.
+     */
+    protected function createUserThread(Conversation $conversation, User $user, string $body, int $type): Thread
+    {
+        $thread = Thread::create($conversation, $type, $body, [], false);
+        $thread->source_via = Thread::PERSON_USER;
+        $thread->source_type = Thread::SOURCE_TYPE_WEB;
+        $thread->user_id = $conversation->user_id;
+        $thread->status = $conversation->status;
+        $thread->state = Thread::STATE_PUBLISHED;
+        $thread->customer_id = $conversation->customer_id;
+        $thread->created_by_user_id = $user->id;
+        $thread->body = $body;
+        $thread->setTo($conversation->customer_email);
+        $thread->save();
+
+        $conversation->mailbox->updateFoldersCounters();
+
+        if ($type == Thread::TYPE_NOTE) {
+            event(new UserAddedNote($conversation, $thread));
+            \Eventy::action('conversation.note_added', $conversation, $thread);
+        } else {
+            event(new UserReplied($conversation, $thread));
+            \Eventy::action('conversation.user_replied', $conversation, $thread);
+        }
+
+        return $thread;
+    }
+
+    /**
      * @return array|false Array of status codes, empty array for "no filter", false if invalid.
      */
     protected function parseStatuses(Request $request)
@@ -214,23 +340,28 @@ class ConversationsApiController extends Controller
             ->get();
 
         return $threads->map(function (Thread $thread) {
-            $row = [
-                'id'        => (int) $thread->id,
-                'type'      => Thread::$types[$thread->type] ?? (string) $thread->type,
-                'state'     => Conversation::$states[$thread->state] ?? (string) $thread->state,
-                'createdAt' => $thread->created_at ? $thread->created_at->toIso8601String() : null,
-                'body'      => (string) ($thread->body ?? ''),
-            ];
-
-            if ($thread->isCustomerMessage()) {
-                $customer = $thread->created_by_customer ?: $thread->customer;
-                $row['customer'] = $this->customerToArray($customer, $thread->from);
-            } else {
-                $row['createdBy'] = $this->userToArray($thread->created_by_user);
-            }
-
-            return $row;
+            return $this->threadToArray($thread);
         })->values()->all();
+    }
+
+    protected function threadToArray(Thread $thread): array
+    {
+        $row = [
+            'id'        => (int) $thread->id,
+            'type'      => Thread::$types[$thread->type] ?? (string) $thread->type,
+            'state'     => Conversation::$states[$thread->state] ?? (string) $thread->state,
+            'createdAt' => $thread->created_at ? $thread->created_at->toIso8601String() : null,
+            'body'      => (string) ($thread->body ?? ''),
+        ];
+
+        if ($thread->isCustomerMessage()) {
+            $customer = $thread->created_by_customer ?: $thread->customer;
+            $row['customer'] = $this->customerToArray($customer, $thread->from);
+        } else {
+            $row['createdBy'] = $this->userToArray($thread->created_by_user);
+        }
+
+        return $row;
     }
 
     /**

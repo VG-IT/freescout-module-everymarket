@@ -35,6 +35,33 @@ trait ApiTokenAuth
         return hash_equals($token, (string) $provided);
     }
 
+    /**
+     * Write endpoints use their own token and only accept it from a header, so
+     * it never ends up in access logs the way a query-string token does.
+     */
+    protected function isAuthorizedForWrite(Request $request): bool
+    {
+        $token = (string) config('everymarket.reply_api_token', '');
+        if ($token === '') {
+            return false;
+        }
+
+        $provided = $request->header('X-Everymarket-Api-Token');
+
+        if (!$provided) {
+            $authHeader = (string) $request->header('Authorization', '');
+            if (preg_match('/Bearer\s+(\S+)/i', $authHeader, $matches)) {
+                $provided = $matches[1];
+            }
+        }
+
+        if ($provided === null || $provided === '') {
+            return false;
+        }
+
+        return hash_equals($token, (string) $provided);
+    }
+
     protected function unauthorizedResponse()
     {
         return response()->json([
