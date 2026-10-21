@@ -2,6 +2,7 @@
 
 namespace Modules\Everymarket\Http\Controllers;
 
+use App\Attachment;
 use App\Conversation;
 use App\Customer;
 use App\Events\UserAddedNote;
@@ -21,6 +22,15 @@ class ConversationsApiController extends Controller
     const DEFAULT_PAGE_SIZE = 50;
     const MAX_PAGE_SIZE = 100;
     const MAX_REPLY_LENGTH = 10000;
+
+    // Seller reply attachments. Match the limits in EM Ops'
+    // FreescoutConversationsController. Base64 adds a third, so the request
+    // can be ~20 MB: PHP post_max_size and nginx client_max_body_size must
+    // allow that.
+    const MAX_REPLY_ATTACHMENTS = 5;
+    const MAX_REPLY_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+    const MAX_REPLY_ATTACHMENTS_TOTAL_BYTES = 15 * 1024 * 1024;
+    const REPLY_ATTACHMENT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx'];
 
     /**
      * GET /everymarket/api/conversations
@@ -160,6 +170,8 @@ class ConversationsApiController extends Controller
      * Body (JSON or form): body        - required, plain text, max 10000 chars
      *                      seller_name - required, store name for the audit note
      *                      sent_by     - optional, EM Ops user email for the audit note
+     *                      attachments - optional, up to 5 of
+     *                                    {file_name, mime_type, content (base64)}
      *
      * The reply is sent as the FreeScout user EM_SELLER_REPLY_USER_ID through the
      * same path as a reply from the web UI, so the customer gets the normal email
@@ -203,6 +215,14 @@ class ConversationsApiController extends Controller
             ], 422);
         }
 
+        $attachments = $this->decodeReplyAttachments($request->input('attachments', []));
+        if (is_string($attachments)) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => $attachments,
+            ], 422);
+        }
+
         $conversation = Conversation::where('state', Conversation::STATE_PUBLISHED)
             ->with(['customer', 'mailbox'])
             ->find((int) $id);
@@ -220,6 +240,22 @@ class ConversationsApiController extends Controller
             ], 422);
         }
 
+        // Store the files before touching the conversation, so a storage
+        // failure leaves nothing half-sent.
+        $attachment_ids = [];
+        foreach ($attachments as $attachment) {
+            $saved = Attachment::create($attachment['file_name'], $attachment['mime_type'], null, $attachment['content'], '', false, null, $user->id);
+            if (!$saved) {
+                Attachment::deleteByIds($attachment_ids);
+                \Log::error('[Everymarket] Could not store seller reply attachment '.$attachment['file_name'].' for conversation '.$conversation->id);
+                return response()->json([
+                    'status' => 'error',
+                    'msg'    => __('Could not store the attachments'),
+                ], 500);
+            }
+            $attachment_ids[] = $saved->id;
+        }
+
         if ($conversation->status == Conversation::STATUS_CLOSED) {
             $conversation->changeStatus(Conversation::STATUS_ACTIVE, $user);
         }
@@ -233,7 +269,7 @@ class ConversationsApiController extends Controller
         $conversation->save();
 
         $html = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
-        $thread = $this->createUserThread($conversation, $user, $html, Thread::TYPE_MESSAGE);
+        $thread = $this->createUserThread($conversation, $user, $html, Thread::TYPE_MESSAGE, $attachment_ids);
 
         $note = __('Reply sent by seller :seller from EM Ops', ['seller' => $seller_name]);
         if ($sent_by !== '') {
@@ -241,14 +277,63 @@ class ConversationsApiController extends Controller
         }
         $this->createUserThread($conversation, $user, htmlspecialchars($note, ENT_QUOTES, 'UTF-8'), Thread::TYPE_NOTE);
 
-        return response()->json($this->threadToArray($thread->fresh(['created_by_user'])), 201);
+        return response()->json($this->threadToArray($thread->fresh(['created_by_user', 'attachments'])), 201);
+    }
+
+    /**
+     * Validates and decodes seller reply attachments. Returns the decoded
+     * list, or an error message for the seller.
+     */
+    protected function decodeReplyAttachments($input)
+    {
+        if (empty($input)) {
+            return [];
+        }
+        if (!is_array($input)) {
+            return __('attachments must be a list');
+        }
+        if (count($input) > self::MAX_REPLY_ATTACHMENTS) {
+            return __('You can attach up to :max files', ['max' => self::MAX_REPLY_ATTACHMENTS]);
+        }
+
+        $decoded = [];
+        $total = 0;
+        foreach ($input as $item) {
+            $file_name = trim((string) ($item['file_name'] ?? ''));
+            $extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+            if ($file_name === '' || !in_array($extension, self::REPLY_ATTACHMENT_EXTENSIONS, true)) {
+                return __(':file is not an allowed file type', ['file' => $file_name ?: __('A file')]);
+            }
+
+            $content = base64_decode((string) ($item['content'] ?? ''), true);
+            if ($content === false || $content === '') {
+                return __(':file is empty or could not be read', ['file' => $file_name]);
+            }
+
+            $size = strlen($content);
+            if ($size > self::MAX_REPLY_ATTACHMENT_BYTES) {
+                return __(':file is larger than 10 MB', ['file' => $file_name]);
+            }
+            $total += $size;
+            if ($total > self::MAX_REPLY_ATTACHMENTS_TOTAL_BYTES) {
+                return __('Attachments are larger than 15 MB in total');
+            }
+
+            $decoded[] = [
+                'file_name' => $file_name,
+                'mime_type' => trim((string) ($item['mime_type'] ?? '')) ?: 'application/octet-stream',
+                'content'   => $content,
+            ];
+        }
+
+        return $decoded;
     }
 
     /**
      * Mirrors Conversation::createUserThread(), which doesn't return the
      * thread it creates. Firing UserReplied queues the email to the customer.
      */
-    protected function createUserThread(Conversation $conversation, User $user, string $body, int $type): Thread
+    protected function createUserThread(Conversation $conversation, User $user, string $body, int $type, array $attachment_ids = []): Thread
     {
         $thread = Thread::create($conversation, $type, $body, [], false);
         $thread->source_via = Thread::PERSON_USER;
@@ -261,6 +346,16 @@ class ConversationsApiController extends Controller
         $thread->body = $body;
         $thread->setTo($conversation->customer_email);
         $thread->save();
+
+        // Link the files before UserReplied queues the email, as the web UI
+        // does, so SendReplyToCustomer attaches them.
+        if ($attachment_ids) {
+            Attachment::whereIn('id', $attachment_ids)->update(['thread_id' => $thread->id]);
+            $thread->has_attachments = true;
+            $thread->save();
+            $conversation->has_attachments = true;
+            $conversation->save();
+        }
 
         $conversation->mailbox->updateFoldersCounters();
 
@@ -334,7 +429,7 @@ class ConversationsApiController extends Controller
         $threads = $conversation->threads()
             ->whereIn('type', [Thread::TYPE_CUSTOMER, Thread::TYPE_MESSAGE, Thread::TYPE_NOTE])
             ->where('state', Thread::STATE_PUBLISHED)
-            ->with(['customer', 'created_by_customer', 'created_by_user'])
+            ->with(['customer', 'created_by_customer', 'created_by_user', 'attachments'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
@@ -361,7 +456,32 @@ class ConversationsApiController extends Controller
             $row['createdBy'] = $this->userToArray($thread->created_by_user);
         }
 
+        $row['attachments'] = $this->attachmentsToArray($thread);
+
         return $row;
+    }
+
+    /**
+     * Files attached to a thread, including images embedded in the body.
+     * `url` is the tokenised download link (APP_URL/storage/attachment/...),
+     * so it opens without a FreeScout login.
+     */
+    protected function attachmentsToArray(Thread $thread): array
+    {
+        if (!$thread->has_attachments) {
+            return [];
+        }
+
+        return $thread->attachments->map(function ($attachment) {
+            return [
+                'id'       => (int) $attachment->id,
+                'fileName' => (string) $attachment->file_name,
+                'mimeType' => (string) ($attachment->mime_type ?? ''),
+                'size'     => (int) $attachment->size,
+                'embedded' => (bool) $attachment->embedded,
+                'url'      => $attachment->url(),
+            ];
+        })->values()->all();
     }
 
     /**
