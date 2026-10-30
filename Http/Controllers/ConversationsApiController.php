@@ -68,7 +68,11 @@ class ConversationsApiController extends Controller
         $modifiedSinceRaw = $request->query('modified_since', $request->query('modifiedSince'));
         if ($modifiedSinceRaw) {
             try {
-                $modifiedSince = Carbon::parse($modifiedSinceRaw);
+                // updated_at is stored in the app timezone, and Laravel binds a
+                // date as its wall-clock time without converting it, so convert
+                // first. Otherwise a UTC cursor skips changes made in the hours
+                // after it (5-6 h for America/Chicago).
+                $modifiedSince = Carbon::parse($modifiedSinceRaw)->setTimezone(config('app.timezone'));
             } catch (\Exception $e) {
                 return response()->json([
                     'status' => 'error',
