@@ -23,6 +23,10 @@ class ConversationsApiController extends Controller
     const MAX_PAGE_SIZE = 100;
     const MAX_REPLY_LENGTH = 10000;
 
+    // Formatting kept in an HTML seller reply (body_format=html); everything
+    // else is removed.
+    const REPLY_ALLOWED_HTML = 'p,br,strong,b,em,i,u,s,a[href],ul,ol,li,blockquote';
+
     // Seller reply attachments. Match the limits in EM Ops'
     // FreescoutConversationsController. Base64 adds a third, so the request
     // can be ~20 MB: PHP post_max_size and nginx client_max_body_size must
@@ -167,7 +171,9 @@ class ConversationsApiController extends Controller
      *
      * Sends a reply to the customer on behalf of a seller in EM Ops.
      *
-     * Body (JSON or form): body        - required, plain text, max 10000 chars
+     * Body (JSON or form): body        - required, max 10000 chars
+     *                      body_format - optional, "text" (default) or "html";
+     *                                    HTML is cleaned to REPLY_ALLOWED_HTML
      *                      seller_name - required, store name for the audit note
      *                      sent_by     - optional, EM Ops user email for the audit note
      *                      attachments - optional, up to 5 of
@@ -201,6 +207,14 @@ class ConversationsApiController extends Controller
         $body = trim((string) $request->input('body', ''));
         $seller_name = trim((string) $request->input('seller_name', ''));
         $sent_by = trim((string) $request->input('sent_by', ''));
+        $body_format = (string) $request->input('body_format', 'text');
+
+        if (!in_array($body_format, ['text', 'html'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('body_format must be text or html'),
+            ], 422);
+        }
 
         if ($body === '' || $seller_name === '') {
             return response()->json([
@@ -213,6 +227,18 @@ class ConversationsApiController extends Controller
                 'status' => 'error',
                 'msg'    => __('body is too long (max :max characters)', ['max' => self::MAX_REPLY_LENGTH]),
             ], 422);
+        }
+
+        if ($body_format === 'html') {
+            $html = \Purifier::clean($body, ['HTML.Allowed' => self::REPLY_ALLOWED_HTML]);
+            if (trim(html_entity_decode(strip_tags($html), ENT_QUOTES, 'UTF-8')) === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'msg'    => __('body and seller_name are required'),
+                ], 422);
+            }
+        } else {
+            $html = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
         }
 
         $attachments = $this->decodeReplyAttachments($request->input('attachments', []));
@@ -268,7 +294,6 @@ class ConversationsApiController extends Controller
         $conversation->updateFolder();
         $conversation->save();
 
-        $html = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
         $thread = $this->createUserThread($conversation, $user, $html, Thread::TYPE_MESSAGE, $attachment_ids);
 
         $note = __('Reply sent by seller :seller from EM Ops', ['seller' => $seller_name]);
