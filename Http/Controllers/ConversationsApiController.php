@@ -7,6 +7,7 @@ use App\Conversation;
 use App\Customer;
 use App\Events\UserAddedNote;
 use App\Events\UserReplied;
+use App\Mailbox;
 use App\Thread;
 use App\User;
 use Carbon\Carbon;
@@ -171,6 +172,113 @@ class ConversationsApiController extends Controller
     }
 
     /**
+     * POST /everymarket/api/conversations
+     *
+     * Starts a conversation from an order and emails the customer. Same write
+     * token, body, seller note and attachments as reply().
+     *
+     * Body (JSON or form): email, subject, body, body_format, seller_name,
+     *                      sent_by, order_number,
+     *                      attachments[{file_name, mime_type, content}]
+     *
+     * 201 {id, number, status}
+     *
+     * Auth: EM_REPLY_API_TOKEN in header X-Everymarket-Api-Token or
+     *       Authorization: Bearer <token> (the query string is not accepted).
+     */
+    public function store(Request $request)
+    {
+        if (!$this->isAuthorizedForWrite($request)) {
+            return $this->unauthorizedResponse();
+        }
+
+        $user = $this->sellerReplyUser();
+        if (!$user) {
+            return $this->sellerRepliesNotConfigured();
+        }
+
+        $message = $this->validatedSellerMessage($request);
+        if ($message instanceof \Illuminate\Http\JsonResponse) {
+            return $message;
+        }
+
+        $email = \App\Email::sanitizeEmail($request->input('email'));
+        if (!$email) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('A valid customer email is required'),
+            ], 422);
+        }
+
+        $subject = trim(preg_replace('/\s+/u', ' ', strip_tags((string) $request->input('subject', ''))));
+        if ($subject === '') {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('Add a subject before sending.'),
+            ], 422);
+        }
+        if (mb_strlen($subject) > 255) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('The subject is too long'),
+            ], 422);
+        }
+
+        $mailbox = $this->sellerMailbox();
+        if (!$mailbox) {
+            \Log::warning('[Everymarket] Cannot start a conversation: no mailbox has Everymarket settings');
+            return $this->sellerRepliesNotConfigured();
+        }
+
+        $customer = Customer::create($email);
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('A valid customer email is required'),
+            ], 422);
+        }
+
+        $attachment_ids = $this->storeSellerAttachments($message['attachments'], $user, 'a new conversation');
+        if ($attachment_ids instanceof \Illuminate\Http\JsonResponse) {
+            return $attachment_ids;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $conversation = new Conversation();
+        $conversation->type = Conversation::TYPE_EMAIL;
+        $conversation->subject = $subject;
+        $conversation->setPreview($message['html']);
+        $conversation->mailbox_id = $mailbox->id;
+        $conversation->created_by_user_id = $user->id;
+        $conversation->source_via = Conversation::PERSON_USER;
+        $conversation->source_type = Conversation::SOURCE_TYPE_WEB;
+        $conversation->customer_id = $customer->id;
+        $conversation->customer_email = $email;
+        $conversation->status = Conversation::STATUS_ACTIVE;
+        $conversation->state = Conversation::STATE_PUBLISHED;
+        $conversation->last_reply_at = $now;
+        $conversation->last_reply_from = Conversation::PERSON_USER;
+        $conversation->user_updated_at = $now;
+        $conversation->setRelation('mailbox', $mailbox);
+        $conversation->setRelation('customer', $customer);
+        $conversation->updateFolder($mailbox);
+        $conversation->save();
+
+        $this->assignOrderNumber($conversation, $mailbox, $request->input('order_number'));
+
+        $this->createUserThread($conversation, $user, $message['html'], Thread::TYPE_MESSAGE, $attachment_ids);
+        $this->createUserThread($conversation, $user, $this->sellerAuditNote($message['seller_name'], $message['sent_by']), Thread::TYPE_NOTE);
+
+        $conversation->refresh();
+
+        return response()->json([
+            'id'     => (int) $conversation->id,
+            'number' => (int) $conversation->number,
+            'status' => Conversation::$statuses[$conversation->status] ?? 'active',
+        ], 201);
+    }
+
+    /**
      * POST /everymarket/api/conversations/{id}/reply
      *
      * Sends a reply to the customer on behalf of a seller in EM Ops.
@@ -198,59 +306,14 @@ class ConversationsApiController extends Controller
             return $this->unauthorizedResponse();
         }
 
-        $user = User::where('id', (int) config('everymarket.seller_reply_user_id'))
-            ->where('status', User::STATUS_ACTIVE)
-            ->first();
+        $user = $this->sellerReplyUser();
         if (!$user) {
-            return response()->json([
-                'status' => 'error',
-                'msg'    => __('Seller replies are not configured'),
-            ], 503);
+            return $this->sellerRepliesNotConfigured();
         }
 
-        $body = trim((string) $request->input('body', ''));
-        $seller_name = trim((string) $request->input('seller_name', ''));
-        $sent_by = trim((string) $request->input('sent_by', ''));
-        $body_format = (string) $request->input('body_format', 'text');
-
-        if (!in_array($body_format, ['text', 'html'], true)) {
-            return response()->json([
-                'status' => 'error',
-                'msg'    => __('body_format must be text or html'),
-            ], 422);
-        }
-
-        if ($body === '' || $seller_name === '') {
-            return response()->json([
-                'status' => 'error',
-                'msg'    => __('body and seller_name are required'),
-            ], 422);
-        }
-        if (mb_strlen($body) > self::MAX_REPLY_LENGTH) {
-            return response()->json([
-                'status' => 'error',
-                'msg'    => __('body is too long (max :max characters)', ['max' => self::MAX_REPLY_LENGTH]),
-            ], 422);
-        }
-
-        if ($body_format === 'html') {
-            $html = \Purifier::clean($body, ['HTML.Allowed' => self::REPLY_ALLOWED_HTML]);
-            if (trim(html_entity_decode(strip_tags($html), ENT_QUOTES, 'UTF-8')) === '') {
-                return response()->json([
-                    'status' => 'error',
-                    'msg'    => __('body and seller_name are required'),
-                ], 422);
-            }
-        } else {
-            $html = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
-        }
-
-        $attachments = $this->decodeReplyAttachments($request->input('attachments', []));
-        if (is_string($attachments)) {
-            return response()->json([
-                'status' => 'error',
-                'msg'    => $attachments,
-            ], 422);
+        $message = $this->validatedSellerMessage($request);
+        if ($message instanceof \Illuminate\Http\JsonResponse) {
+            return $message;
         }
 
         $conversation = Conversation::where('state', Conversation::STATE_PUBLISHED)
@@ -272,18 +335,9 @@ class ConversationsApiController extends Controller
 
         // Store the files before touching the conversation, so a storage
         // failure leaves nothing half-sent.
-        $attachment_ids = [];
-        foreach ($attachments as $attachment) {
-            $saved = Attachment::create($attachment['file_name'], $attachment['mime_type'], null, $attachment['content'], '', false, null, $user->id);
-            if (!$saved) {
-                Attachment::deleteByIds($attachment_ids);
-                \Log::error('[Everymarket] Could not store seller reply attachment '.$attachment['file_name'].' for conversation '.$conversation->id);
-                return response()->json([
-                    'status' => 'error',
-                    'msg'    => __('Could not store the attachments'),
-                ], 500);
-            }
-            $attachment_ids[] = $saved->id;
+        $attachment_ids = $this->storeSellerAttachments($message['attachments'], $user, 'conversation '.$conversation->id);
+        if ($attachment_ids instanceof \Illuminate\Http\JsonResponse) {
+            return $attachment_ids;
         }
 
         if ($conversation->status == Conversation::STATUS_CLOSED) {
@@ -298,13 +352,8 @@ class ConversationsApiController extends Controller
         $conversation->updateFolder();
         $conversation->save();
 
-        $thread = $this->createUserThread($conversation, $user, $html, Thread::TYPE_MESSAGE, $attachment_ids);
-
-        $note = __('Reply sent by seller :seller from EM Ops', ['seller' => $seller_name]);
-        if ($sent_by !== '') {
-            $note .= ' ('.$sent_by.')';
-        }
-        $this->createUserThread($conversation, $user, htmlspecialchars($note, ENT_QUOTES, 'UTF-8'), Thread::TYPE_NOTE);
+        $thread = $this->createUserThread($conversation, $user, $message['html'], Thread::TYPE_MESSAGE, $attachment_ids);
+        $this->createUserThread($conversation, $user, $this->sellerAuditNote($message['seller_name'], $message['sent_by']), Thread::TYPE_NOTE);
 
         return response()->json($this->threadToArray($thread->fresh(['created_by_user', 'attachments'])), 201);
     }
@@ -359,12 +408,176 @@ class ConversationsApiController extends Controller
     }
 
     /**
+     * @return array{html: string, seller_name: string, sent_by: string, attachments: array}|\Illuminate\Http\JsonResponse
+     */
+    protected function validatedSellerMessage(Request $request)
+    {
+        $body = trim((string) $request->input('body', ''));
+        $seller_name = trim((string) $request->input('seller_name', ''));
+        $sent_by = trim((string) $request->input('sent_by', ''));
+        $body_format = (string) $request->input('body_format', 'text');
+
+        if (!in_array($body_format, ['text', 'html'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('body_format must be text or html'),
+            ], 422);
+        }
+
+        if ($body === '' || $seller_name === '') {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('body and seller_name are required'),
+            ], 422);
+        }
+        if (mb_strlen($body) > self::MAX_REPLY_LENGTH) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('body is too long (max :max characters)', ['max' => self::MAX_REPLY_LENGTH]),
+            ], 422);
+        }
+
+        if ($body_format === 'html') {
+            $html = \Purifier::clean($body, ['HTML.Allowed' => self::REPLY_ALLOWED_HTML]);
+            if (trim(html_entity_decode(strip_tags($html), ENT_QUOTES, 'UTF-8')) === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'msg'    => __('body and seller_name are required'),
+                ], 422);
+            }
+        } else {
+            $html = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+        }
+
+        $attachments = $this->decodeReplyAttachments($request->input('attachments', []));
+        if (is_string($attachments)) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => $attachments,
+            ], 422);
+        }
+
+        return [
+            'html'        => $html,
+            'seller_name' => $seller_name,
+            'sent_by'     => $sent_by,
+            'attachments' => $attachments,
+        ];
+    }
+
+    /**
+     * @param array<int, array{file_name: string, mime_type: string, content: string}> $attachments
+     * @return array<int, int>|\Illuminate\Http\JsonResponse
+     */
+    protected function storeSellerAttachments(array $attachments, User $user, string $logContext)
+    {
+        $attachment_ids = [];
+        foreach ($attachments as $attachment) {
+            $saved = Attachment::create($attachment['file_name'], $attachment['mime_type'], null, $attachment['content'], '', false, null, $user->id);
+            if (!$saved) {
+                Attachment::deleteByIds($attachment_ids);
+                \Log::error('[Everymarket] Could not store seller reply attachment '.$attachment['file_name'].' for '.$logContext);
+                return response()->json([
+                    'status' => 'error',
+                    'msg'    => __('Could not store the attachments'),
+                ], 500);
+            }
+            $attachment_ids[] = $saved->id;
+        }
+
+        return $attachment_ids;
+    }
+
+    protected function sellerAuditNote(string $seller_name, string $sent_by): string
+    {
+        $note = __('Reply sent by seller :seller from EM Ops', ['seller' => $seller_name]);
+        if ($sent_by !== '') {
+            $note .= ' ('.$sent_by.')';
+        }
+
+        return htmlspecialchars($note, ENT_QUOTES, 'UTF-8');
+    }
+
+    protected function sellerReplyUser()
+    {
+        return User::where('id', (int) config('everymarket.seller_reply_user_id'))
+            ->where('status', User::STATUS_ACTIVE)
+            ->first();
+    }
+
+    protected function sellerRepliesNotConfigured()
+    {
+        return response()->json([
+            'status' => 'error',
+            'msg'    => __('Seller replies are not configured'),
+        ], 503);
+    }
+
+    protected function sellerMailbox()
+    {
+        $mailboxes = Mailbox::orderBy('id')->get();
+        foreach ($mailboxes as $mailbox) {
+            if (\Everymarket::isMailboxApiEnabled($mailbox)) {
+                return $mailbox;
+            }
+        }
+
+        return null;
+    }
+
+    protected function assignOrderNumber(Conversation $conversation, Mailbox $mailbox, $orderNumber): void
+    {
+        $orderNumber = trim(preg_replace('/\s+/u', ' ', strip_tags((string) $orderNumber)));
+        if ($orderNumber === '') {
+            return;
+        }
+        $orderNumber = mb_substr($orderNumber, 0, 64);
+
+        if (!Schema::hasTable('custom_fields')) {
+            return;
+        }
+
+        $customField = DB::table('custom_fields')
+            ->where('mailbox_id', $mailbox->id)
+            ->where('name', 'Order Number')
+            ->first();
+        if (!$customField) {
+            \Log::warning('[Everymarket] Order Number custom field is missing', ['mailbox_id' => $mailbox->id]);
+            return;
+        }
+
+        $ccfTable = Schema::hasTable('conversation_custom_field')
+            ? 'conversation_custom_field'
+            : (Schema::hasTable('conversation_custom_fields') ? 'conversation_custom_fields' : null);
+        if (!$ccfTable) {
+            return;
+        }
+
+        try {
+            DB::table($ccfTable)->insert([
+                'conversation_id' => $conversation->id,
+                'custom_field_id' => $customField->id,
+                'value'           => $orderNumber,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('[Everymarket] Could not store Order Number: '.$e->getMessage());
+            return;
+        }
+
+        \Eventy::filter('conversation.set_custom_field', false, $conversation, 'Order Number', $orderNumber);
+        $conversation->setMeta('custom_fields.order_number', $orderNumber, true);
+    }
+
+    /**
      * Mirrors Conversation::createUserThread(), which doesn't return the
      * thread it creates. Firing UserReplied queues the email to the customer.
      */
     protected function createUserThread(Conversation $conversation, User $user, string $body, int $type, array $attachment_ids = []): Thread
     {
         $thread = Thread::create($conversation, $type, $body, [], false);
+        if ($type == Thread::TYPE_MESSAGE && !(int) $conversation->threads_count) {
+            $thread->first = true;
+        }
         $thread->source_via = Thread::PERSON_USER;
         $thread->source_type = Thread::SOURCE_TYPE_WEB;
         $thread->user_id = $conversation->user_id;

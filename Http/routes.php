@@ -23,6 +23,9 @@ Route::group(['prefix' => \Helper::getSubdirectory(), 'namespace' => 'Modules\Ev
         ->where('id', '[0-9]+')
         ->name('everymarket.api.conversations.show');
 
+    Route::post('/everymarket/api/conversations', 'ConversationsApiController@store')
+        ->name('everymarket.api.conversations.store');
+
     Route::post('/everymarket/api/conversations/{id}/reply', 'ConversationsApiController@reply')
         ->where('id', '[0-9]+')
         ->name('everymarket.api.conversations.reply');
