@@ -29,4 +29,12 @@ Route::group(['prefix' => \Helper::getSubdirectory(), 'namespace' => 'Modules\Ev
     Route::post('/everymarket/api/conversations/{id}/reply', 'ConversationsApiController@reply')
         ->where('id', '[0-9]+')
         ->name('everymarket.api.conversations.reply');
+
+    Route::post('/everymarket/api/conversations/{id}/close', 'ConversationsApiController@close')
+        ->where('id', '[0-9]+')
+        ->name('everymarket.api.conversations.close');
+
+    Route::post('/everymarket/api/conversations/{id}/forward', 'ConversationsApiController@forward')
+        ->where('id', '[0-9]+')
+        ->name('everymarket.api.conversations.forward');
 });

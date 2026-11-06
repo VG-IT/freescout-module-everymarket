@@ -353,9 +353,118 @@ class ConversationsApiController extends Controller
         $conversation->save();
 
         $thread = $this->createUserThread($conversation, $user, $message['html'], Thread::TYPE_MESSAGE, $attachment_ids);
-        $this->createUserThread($conversation, $user, $this->sellerAuditNote($message['seller_name'], $message['sent_by']), Thread::TYPE_NOTE);
+        // The customer message is already stored. A failure while recording
+        // the internal note must not make EM Ops tell the seller it was not sent.
+        try {
+            $this->createUserThread($conversation, $user, $this->sellerAuditNote($message['seller_name'], $message['sent_by']), Thread::TYPE_NOTE);
+        } catch (\Throwable $e) {
+            \Log::error('[Everymarket] Seller reply '.$thread->id.' was saved on conversation '.$conversation->id.' but the audit note failed: '.$e->getMessage());
+        }
 
-        return response()->json($this->threadToArray($thread->fresh(['created_by_user', 'attachments'])), 201);
+        try {
+            $payload = $this->threadToArray($thread->fresh(['created_by_user', 'attachments']));
+        } catch (\Throwable $e) {
+            \Log::error('[Everymarket] Seller reply '.$thread->id.' was saved on conversation '.$conversation->id.' but the response could not be built: '.$e->getMessage());
+            $payload = ['id' => (int) $thread->id, 'type' => 'message'];
+        }
+
+        return response()->json($payload, 201);
+    }
+
+    /**
+     * POST /everymarket/api/conversations/{id}/close
+     *
+     * Closes a published conversation. Closing one that is already closed is
+     * success, so EM Ops can retry without creating another status line.
+     *
+     * Auth: EM_REPLY_API_TOKEN, same as reply().
+     */
+    public function close(Request $request, $id)
+    {
+        if (!$this->isAuthorizedForWrite($request)) {
+            return $this->unauthorizedResponse();
+        }
+
+        $user = $this->sellerReplyUser();
+        if (!$user) {
+            return $this->sellerRepliesNotConfigured();
+        }
+
+        $conversation = $this->publishedConversation($id);
+        if (!$conversation) {
+            return $this->conversationNotFound();
+        }
+
+        if ((int) $conversation->status !== (int) Conversation::STATUS_CLOSED) {
+            $conversation->changeStatus(Conversation::STATUS_CLOSED, $user);
+        }
+
+        return response()->json(['status' => 'ok'], 200);
+    }
+
+    /**
+     * POST /everymarket/api/conversations/{id}/forward
+     *
+     * Body: to (required email), close (optional bool), body (optional).
+     * Forwards the conversation to `to`. When close is true, the original
+     * conversation is closed in this same request.
+     *
+     * Auth: EM_REPLY_API_TOKEN, same as reply().
+     */
+    public function forward(Request $request, $id)
+    {
+        if (!$this->isAuthorizedForWrite($request)) {
+            return $this->unauthorizedResponse();
+        }
+
+        $user = $this->sellerReplyUser();
+        if (!$user) {
+            return $this->sellerRepliesNotConfigured();
+        }
+
+        $to = \App\Email::sanitizeEmail($request->input('to'));
+        if (!$to) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('A valid email address is required'),
+            ], 422);
+        }
+
+        $conversation = $this->publishedConversation($id);
+        if (!$conversation) {
+            return $this->conversationNotFound();
+        }
+
+        $body = trim((string) $request->input('body', ''));
+        if ($body === '') {
+            $body = __('Forwarded from EM Ops');
+        }
+
+        $conversation->forward($user, htmlspecialchars($body, ENT_QUOTES, 'UTF-8'), $to);
+
+        if (filter_var($request->input('close'), FILTER_VALIDATE_BOOLEAN)
+            && (int) $conversation->status !== (int) Conversation::STATUS_CLOSED
+        ) {
+            $conversation->refresh();
+            $conversation->changeStatus(Conversation::STATUS_CLOSED, $user);
+        }
+
+        return response()->json(['status' => 'ok'], 200);
+    }
+
+    protected function publishedConversation($id)
+    {
+        return Conversation::where('state', Conversation::STATE_PUBLISHED)
+            ->with(['customer', 'mailbox'])
+            ->find((int) $id);
+    }
+
+    protected function conversationNotFound()
+    {
+        return response()->json([
+            'status' => 'error',
+            'msg'    => __('Conversation not found'),
+        ], 404);
     }
 
     /**
@@ -599,14 +708,27 @@ class ConversationsApiController extends Controller
             $conversation->save();
         }
 
-        $conversation->mailbox->updateFoldersCounters();
+        // Counters, the customer email, and realtime updates happen after the
+        // thread row exists. If one of them throws, the reply is still sent
+        // from EM Ops' point of view and must not be reported as a failure.
+        if ($conversation->mailbox) {
+            try {
+                $conversation->mailbox->updateFoldersCounters();
+            } catch (\Throwable $e) {
+                \Log::error('[Everymarket] Could not refresh folder counters after thread '.$thread->id.' on conversation '.$conversation->id.': '.$e->getMessage());
+            }
+        }
 
-        if ($type == Thread::TYPE_NOTE) {
-            event(new UserAddedNote($conversation, $thread));
-            \Eventy::action('conversation.note_added', $conversation, $thread);
-        } else {
-            event(new UserReplied($conversation, $thread));
-            \Eventy::action('conversation.user_replied', $conversation, $thread);
+        try {
+            if ($type == Thread::TYPE_NOTE) {
+                event(new UserAddedNote($conversation, $thread));
+                \Eventy::action('conversation.note_added', $conversation, $thread);
+            } else {
+                event(new UserReplied($conversation, $thread));
+                \Eventy::action('conversation.user_replied', $conversation, $thread);
+            }
+        } catch (\Throwable $e) {
+            \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but a follow-up action failed: '.$e->getMessage());
         }
 
         return $thread;
