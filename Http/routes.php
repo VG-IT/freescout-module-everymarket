@@ -34,6 +34,10 @@ Route::group(['prefix' => \Helper::getSubdirectory(), 'namespace' => 'Modules\Ev
         ->where('id', '[0-9]+')
         ->name('everymarket.api.conversations.close');
 
+    Route::post('/everymarket/api/conversations/{id}/reopen', 'ConversationsApiController@reopen')
+        ->where('id', '[0-9]+')
+        ->name('everymarket.api.conversations.reopen');
+
     Route::post('/everymarket/api/conversations/{id}/forward', 'ConversationsApiController@forward')
         ->where('id', '[0-9]+')
         ->name('everymarket.api.conversations.forward');

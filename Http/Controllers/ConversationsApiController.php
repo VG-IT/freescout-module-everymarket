@@ -294,8 +294,8 @@ class ConversationsApiController extends Controller
      * The reply is sent as the FreeScout user EM_SELLER_REPLY_USER_ID through the
      * same path as a reply from the web UI, so the customer gets the normal email
      * (after the usual undo delay). An internal note records which seller sent it.
-     * A closed conversation is reopened as active so the CS team sees it again;
-     * any other status is left as it is.
+     * A closed conversation cannot be replied to. Re-open it first.
+     * Any other status is left as it is.
      *
      * Auth: EM_REPLY_API_TOKEN in header X-Everymarket-Api-Token or
      *       Authorization: Bearer <token> (the query string is not accepted).
@@ -326,6 +326,12 @@ class ConversationsApiController extends Controller
                 'msg'    => __('Conversation not found'),
             ], 404);
         }
+        if ($conversation->status == Conversation::STATUS_CLOSED) {
+            return response()->json([
+                'status' => 'error',
+                'msg'    => __('This conversation is closed'),
+            ], 422);
+        }
         if ($conversation->status == Conversation::STATUS_SPAM || !$conversation->customer_email) {
             return response()->json([
                 'status' => 'error',
@@ -338,10 +344,6 @@ class ConversationsApiController extends Controller
         $attachment_ids = $this->storeSellerAttachments($message['attachments'], $user, 'conversation '.$conversation->id);
         if ($attachment_ids instanceof \Illuminate\Http\JsonResponse) {
             return $attachment_ids;
-        }
-
-        if ($conversation->status == Conversation::STATUS_CLOSED) {
-            $conversation->changeStatus(Conversation::STATUS_ACTIVE, $user);
         }
 
         // Same conversation fields the web UI's send_reply sets for a reply.
@@ -397,6 +399,37 @@ class ConversationsApiController extends Controller
 
         if ((int) $conversation->status !== (int) Conversation::STATUS_CLOSED) {
             $conversation->changeStatus(Conversation::STATUS_CLOSED, $user);
+        }
+
+        return response()->json(['status' => 'ok'], 200);
+    }
+
+    /**
+     * POST /everymarket/api/conversations/{id}/reopen
+     *
+     * Opens a closed conversation again so a reply can be sent. Re-opening
+     * one that is already open is success.
+     *
+     * Auth: EM_REPLY_API_TOKEN, same as reply().
+     */
+    public function reopen(Request $request, $id)
+    {
+        if (!$this->isAuthorizedForWrite($request)) {
+            return $this->unauthorizedResponse();
+        }
+
+        $user = $this->sellerReplyUser();
+        if (!$user) {
+            return $this->sellerRepliesNotConfigured();
+        }
+
+        $conversation = $this->publishedConversation($id);
+        if (!$conversation) {
+            return $this->conversationNotFound();
+        }
+
+        if ((int) $conversation->status === (int) Conversation::STATUS_CLOSED) {
+            $conversation->changeStatus(Conversation::STATUS_ACTIVE, $user);
         }
 
         return response()->json(['status' => 'ok'], 200);
