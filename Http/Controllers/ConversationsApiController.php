@@ -397,9 +397,7 @@ class ConversationsApiController extends Controller
             return $this->conversationNotFound();
         }
 
-        if ((int) $conversation->status !== (int) Conversation::STATUS_CLOSED) {
-            $conversation->changeStatus(Conversation::STATUS_CLOSED, $user);
-        }
+        $this->changeStatusOrKeep($conversation, (int) Conversation::STATUS_CLOSED, $user);
 
         return response()->json(['status' => 'ok'], 200);
     }
@@ -429,7 +427,7 @@ class ConversationsApiController extends Controller
         }
 
         if ((int) $conversation->status === (int) Conversation::STATUS_CLOSED) {
-            $conversation->changeStatus(Conversation::STATUS_ACTIVE, $user);
+            $this->changeStatusOrKeep($conversation, (int) Conversation::STATUS_ACTIVE, $user);
         }
 
         return response()->json(['status' => 'ok'], 200);
@@ -475,11 +473,9 @@ class ConversationsApiController extends Controller
 
         $conversation->forward($user, htmlspecialchars($body, ENT_QUOTES, 'UTF-8'), $to);
 
-        if (filter_var($request->input('close'), FILTER_VALIDATE_BOOLEAN)
-            && (int) $conversation->status !== (int) Conversation::STATUS_CLOSED
-        ) {
+        if (filter_var($request->input('close'), FILTER_VALIDATE_BOOLEAN)) {
             $conversation->refresh();
-            $conversation->changeStatus(Conversation::STATUS_CLOSED, $user);
+            $this->changeStatusOrKeep($conversation, (int) Conversation::STATUS_CLOSED, $user);
         }
 
         return response()->json(['status' => 'ok'], 200);
@@ -729,16 +725,20 @@ class ConversationsApiController extends Controller
         $thread->created_by_user_id = $user->id;
         $thread->body = $body;
         $thread->setTo($conversation->customer_email);
-        $thread->save();
+        $this->saveThreadOrKeep($thread, $conversation);
 
         // Link the files before UserReplied queues the email, as the web UI
         // does, so SendReplyToCustomer attaches them.
         if ($attachment_ids) {
             Attachment::whereIn('id', $attachment_ids)->update(['thread_id' => $thread->id]);
             $thread->has_attachments = true;
-            $thread->save();
+            $this->saveThreadOrKeep($thread, $conversation);
             $conversation->has_attachments = true;
-            $conversation->save();
+            try {
+                $conversation->save();
+            } catch (\Throwable $e) {
+                \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but the attachment flag could not be saved: '.$e->getMessage());
+            }
         }
 
         // Counters, the customer email, and realtime updates happen after the
@@ -765,6 +765,48 @@ class ConversationsApiController extends Controller
         }
 
         return $thread;
+    }
+
+    /**
+     * changeStatus() saves the new status, then writes a line item and
+     * updates folder counters. Those follow-ups throw often enough that the
+     * first request returns 500 after the status is already stored, and the
+     * retry succeeds because the status matches. Once the status is stored,
+     * the request succeeded.
+     */
+    protected function changeStatusOrKeep(Conversation $conversation, int $status, User $user): void
+    {
+        if ((int) $conversation->status === $status) {
+            return;
+        }
+
+        try {
+            $conversation->changeStatus($status, $user);
+        } catch (\Throwable $e) {
+            $conversation->refresh();
+            if ((int) $conversation->status === $status) {
+                \Log::error('[Everymarket] Conversation '.$conversation->id.' status was saved but a follow-up failed: '.$e->getMessage());
+                return;
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Thread::save() runs observers after the row is inserted. If one of them
+     * throws, the reply is already stored and the customer email still has to
+     * be queued. A failure before the row exists is a real failure.
+     */
+    protected function saveThreadOrKeep(Thread $thread, Conversation $conversation): void
+    {
+        try {
+            $thread->save();
+        } catch (\Throwable $e) {
+            if (!$thread->exists) {
+                throw $e;
+            }
+            \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but a follow-up during save failed: '.$e->getMessage());
+        }
     }
 
     /**
