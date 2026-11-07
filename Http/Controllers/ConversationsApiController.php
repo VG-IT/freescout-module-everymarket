@@ -6,6 +6,7 @@ use App\Attachment;
 use App\Conversation;
 use App\Customer;
 use App\Events\UserAddedNote;
+use App\Events\UserCreatedConversation;
 use App\Events\UserReplied;
 use App\Mailbox;
 use App\Thread;
@@ -707,61 +708,67 @@ class ConversationsApiController extends Controller
     }
 
     /**
-     * Mirrors Conversation::createUserThread(), which doesn't return the
-     * thread it creates. Firing UserReplied queues the email to the customer.
+     * Same sequence as ConversationsController::ajax() action send_reply.
+     * SendReplyToCustomer queues the customer email only when UserReplied or
+     * UserCreatedConversation is fired, after attachments are linked.
      */
     protected function createUserThread(Conversation $conversation, User $user, string $body, int $type, array $attachment_ids = []): Thread
     {
-        $thread = Thread::create($conversation, $type, $body, [], false);
-        if ($type == Thread::TYPE_MESSAGE && !(int) $conversation->threads_count) {
-            $thread->first = true;
-        }
+        $is_create = $type == Thread::TYPE_MESSAGE && !(int) $conversation->threads_count;
+
+        $thread = new Thread();
+        $thread->conversation_id = $conversation->id;
+        $thread->type = $type;
         $thread->source_via = Thread::PERSON_USER;
         $thread->source_type = Thread::SOURCE_TYPE_WEB;
+        if ($is_create) {
+            $thread->first = true;
+        }
         $thread->user_id = $conversation->user_id;
         $thread->status = $conversation->status;
         $thread->state = Thread::STATE_PUBLISHED;
         $thread->customer_id = $conversation->customer_id;
         $thread->created_by_user_id = $user->id;
+        $thread->edited_by_user_id = null;
+        $thread->edited_at = null;
         $thread->body = $body;
         $thread->setTo($conversation->customer_email);
-        $this->saveThreadOrKeep($thread, $conversation);
-
-        // Link the files before UserReplied queues the email, as the web UI
-        // does, so SendReplyToCustomer attaches them.
         if ($attachment_ids) {
-            Attachment::whereIn('id', $attachment_ids)->update(['thread_id' => $thread->id]);
             $thread->has_attachments = true;
-            $this->saveThreadOrKeep($thread, $conversation);
+        }
+        $thread->save();
+
+        if ($attachment_ids) {
+            Attachment::whereIn('id', $attachment_ids)
+                ->where('thread_id', null)
+                ->update(['thread_id' => $thread->id]);
             $conversation->has_attachments = true;
-            try {
-                $conversation->save();
-            } catch (\Throwable $e) {
-                \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but the attachment flag could not be saved: '.$e->getMessage());
-            }
+            $conversation->save();
         }
 
-        // Counters, the customer email, and realtime updates happen after the
-        // thread row exists. If one of them throws, the reply is still sent
-        // from EM Ops' point of view and must not be reported as a failure.
+        $undo_after = now()->addSeconds(Conversation::UNDO_TIMOUT);
+        if ($type == Thread::TYPE_NOTE) {
+            event(new UserAddedNote($conversation, $thread));
+            \Eventy::action('conversation.note_added', $conversation, $thread);
+        } elseif ($is_create) {
+            event(new UserCreatedConversation($conversation, $thread));
+            \Eventy::action('conversation.created_by_user_can_undo', $conversation, $thread);
+            \Helper::backgroundAction('conversation.created_by_user', [$conversation, $thread], $undo_after);
+        } else {
+            event(new UserReplied($conversation, $thread));
+            \Eventy::action('conversation.user_replied_can_undo', $conversation, $thread);
+            \Helper::backgroundAction('conversation.user_replied', [$conversation, $thread], $undo_after);
+        }
+
+        // The web UI updates counters before the event. A throw there drops
+        // the email job, which is how a saved reply ends up with no send
+        // attempt. Counters run after the job is queued.
         if ($conversation->mailbox) {
             try {
                 $conversation->mailbox->updateFoldersCounters();
             } catch (\Throwable $e) {
                 \Log::error('[Everymarket] Could not refresh folder counters after thread '.$thread->id.' on conversation '.$conversation->id.': '.$e->getMessage());
             }
-        }
-
-        try {
-            if ($type == Thread::TYPE_NOTE) {
-                event(new UserAddedNote($conversation, $thread));
-                \Eventy::action('conversation.note_added', $conversation, $thread);
-            } else {
-                event(new UserReplied($conversation, $thread));
-                \Eventy::action('conversation.user_replied', $conversation, $thread);
-            }
-        } catch (\Throwable $e) {
-            \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but a follow-up action failed: '.$e->getMessage());
         }
 
         return $thread;
@@ -789,23 +796,6 @@ class ConversationsApiController extends Controller
                 return;
             }
             throw $e;
-        }
-    }
-
-    /**
-     * Thread::save() runs observers after the row is inserted. If one of them
-     * throws, the reply is already stored and the customer email still has to
-     * be queued. A failure before the row exists is a real failure.
-     */
-    protected function saveThreadOrKeep(Thread $thread, Conversation $conversation): void
-    {
-        try {
-            $thread->save();
-        } catch (\Throwable $e) {
-            if (!$thread->exists) {
-                throw $e;
-            }
-            \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but a follow-up during save failed: '.$e->getMessage());
         }
     }
 
