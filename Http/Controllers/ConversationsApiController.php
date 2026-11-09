@@ -876,6 +876,8 @@ class ConversationsApiController extends Controller
             'state'     => Conversation::$states[$thread->state] ?? (string) $thread->state,
             'createdAt' => $thread->created_at ? $thread->created_at->toIso8601String() : null,
             'body'      => (string) ($thread->body ?? ''),
+            'to'        => array_values($thread->getToArray() ?: []),
+            'cc'        => array_values($thread->getCcArray() ?: []),
         ];
 
         if ($thread->isCustomerMessage()) {
