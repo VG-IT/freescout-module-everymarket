@@ -267,16 +267,26 @@ class ConversationsApiController extends Controller
 
         $this->assignOrderNumber($conversation, $mailbox, $request->input('order_number'));
 
-        $this->createUserThread($conversation, $user, $message['html'], Thread::TYPE_MESSAGE, $attachment_ids);
-        $this->createUserThread($conversation, $user, $this->sellerAuditNote($message['seller_name'], $message['sent_by']), Thread::TYPE_NOTE);
+        // The customer message is the send. Workflows and the audit note run
+        // after it is stored, and they throw when CustomFolders or Workflows
+        // call a query method Rememberable does not have. The conversation
+        // is already created, so EM Ops must get 201 instead of sending again.
+        try {
+            $this->createUserThread($conversation, $user, $message['html'], Thread::TYPE_MESSAGE, $attachment_ids);
+        } catch (\Throwable $e) {
+            if (!$this->outgoingMessageStored($conversation)) {
+                throw $e;
+            }
+            \Log::error('[Everymarket] Conversation '.$conversation->id.' message was saved but a follow-up failed: '.$e->getMessage());
+        }
 
-        $conversation->refresh();
+        try {
+            $this->createUserThread($conversation, $user, $this->sellerAuditNote($message['seller_name'], $message['sent_by']), Thread::TYPE_NOTE);
+        } catch (\Throwable $e) {
+            \Log::error('[Everymarket] Conversation '.$conversation->id.' was created but the audit note failed: '.$e->getMessage());
+        }
 
-        return response()->json([
-            'id'     => (int) $conversation->id,
-            'number' => (int) $conversation->number,
-            'status' => Conversation::$statuses[$conversation->status] ?? 'active',
-        ], 201);
+        return $this->createdConversationResponse($conversation);
     }
 
     /**
@@ -472,10 +482,16 @@ class ConversationsApiController extends Controller
             $body = __('Forwarded from EM Ops');
         }
 
-        $conversation->forward($user, htmlspecialchars($body, ENT_QUOTES, 'UTF-8'), $to);
+        try {
+            $conversation->forward($user, htmlspecialchars($body, ENT_QUOTES, 'UTF-8'), $to);
+        } catch (\Throwable $e) {
+            if (!$this->forwardStored($conversation)) {
+                throw $e;
+            }
+            \Log::error('[Everymarket] Conversation '.$conversation->id.' was forwarded but a follow-up failed: '.$e->getMessage());
+        }
 
         if (filter_var($request->input('close'), FILTER_VALIDATE_BOOLEAN)) {
-            $conversation->refresh();
             $this->changeStatusOrKeep($conversation, (int) Conversation::STATUS_CLOSED, $user);
         }
 
@@ -746,18 +762,26 @@ class ConversationsApiController extends Controller
             $conversation->save();
         }
 
-        $undo_after = now()->addSeconds(Conversation::UNDO_TIMOUT);
-        if ($type == Thread::TYPE_NOTE) {
-            event(new UserAddedNote($conversation, $thread));
-            \Eventy::action('conversation.note_added', $conversation, $thread);
-        } elseif ($is_create) {
-            event(new UserCreatedConversation($conversation, $thread));
-            \Eventy::action('conversation.created_by_user_can_undo', $conversation, $thread);
-            \Helper::backgroundAction('conversation.created_by_user', [$conversation, $thread], $undo_after);
-        } else {
-            event(new UserReplied($conversation, $thread));
-            \Eventy::action('conversation.user_replied_can_undo', $conversation, $thread);
-            \Helper::backgroundAction('conversation.user_replied', [$conversation, $thread], $undo_after);
+        // These hooks run after the thread row is stored. Workflows call
+        // Conversation::getStatusesWithNames(), which Rememberable's query
+        // builder does not have, and that exception used to discard a send
+        // that had already been saved.
+        try {
+            $undo_after = now()->addSeconds(Conversation::UNDO_TIMOUT);
+            if ($type == Thread::TYPE_NOTE) {
+                event(new UserAddedNote($conversation, $thread));
+                \Eventy::action('conversation.note_added', $conversation, $thread);
+            } elseif ($is_create) {
+                event(new UserCreatedConversation($conversation, $thread));
+                \Eventy::action('conversation.created_by_user_can_undo', $conversation, $thread);
+                \Helper::backgroundAction('conversation.created_by_user', [$conversation, $thread], $undo_after);
+            } else {
+                event(new UserReplied($conversation, $thread));
+                \Eventy::action('conversation.user_replied_can_undo', $conversation, $thread);
+                \Helper::backgroundAction('conversation.user_replied', [$conversation, $thread], $undo_after);
+            }
+        } catch (\Throwable $e) {
+            \Log::error('[Everymarket] Thread '.$thread->id.' was saved on conversation '.$conversation->id.' but a follow-up action failed: '.$e->getMessage());
         }
 
         // The web UI updates counters before the event. A throw there drops
@@ -790,13 +814,73 @@ class ConversationsApiController extends Controller
         try {
             $conversation->changeStatus($status, $user);
         } catch (\Throwable $e) {
-            $conversation->refresh();
-            if ((int) $conversation->status === $status) {
+            // Read the row directly. refresh() loads the model again and can
+            // throw the same Rememberable error that changeStatus() just did.
+            $stored = $this->storedStatus($conversation);
+            if ($stored === $status) {
+                $conversation->status = $status;
                 \Log::error('[Everymarket] Conversation '.$conversation->id.' status was saved but a follow-up failed: '.$e->getMessage());
                 return;
             }
             throw $e;
         }
+    }
+
+    protected function createdConversationResponse(Conversation $conversation)
+    {
+        $status = (int) $conversation->status;
+        $number = (int) $conversation->number;
+        try {
+            $fresh = DB::table('conversations')->where('id', $conversation->id)->first(['number', 'status']);
+            if ($fresh) {
+                $number = (int) $fresh->number;
+                $status = (int) $fresh->status;
+            }
+        } catch (\Throwable $e) {
+            \Log::error('[Everymarket] Conversation '.$conversation->id.' was created but its status could not be reread: '.$e->getMessage());
+        }
+
+        return response()->json([
+            'id'     => (int) $conversation->id,
+            'number' => $number,
+            'status' => Conversation::$statuses[$status] ?? 'active',
+        ], 201);
+    }
+
+    protected function outgoingMessageStored(Conversation $conversation): bool
+    {
+        if (!$conversation->id) {
+            return false;
+        }
+
+        return Thread::where('conversation_id', $conversation->id)
+            ->where('type', Thread::TYPE_MESSAGE)
+            ->exists();
+    }
+
+    protected function forwardStored(Conversation $conversation): bool
+    {
+        if (!$conversation->id) {
+            return false;
+        }
+
+        $since = date('Y-m-d H:i:s', time() - 120);
+
+        return Thread::where('conversation_id', $conversation->id)
+            ->where('subtype', Thread::SUBTYPE_FORWARD)
+            ->where('created_at', '>=', $since)
+            ->exists();
+    }
+
+    protected function storedStatus(Conversation $conversation): ?int
+    {
+        try {
+            $status = DB::table('conversations')->where('id', $conversation->id)->value('status');
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return $status === null ? null : (int) $status;
     }
 
     /**
