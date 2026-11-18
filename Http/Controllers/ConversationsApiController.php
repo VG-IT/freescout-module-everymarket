@@ -47,6 +47,9 @@ class ConversationsApiController extends Controller
      *        modified_since=... (optional, ISO 8601; alias: modifiedSince) —
      *            only conversations updated at/after this time, ordered oldest
      *            modified first for incremental polling
+     *        include_deleted=1 (optional) — also list deleted conversations
+     *            (state "deleted"), e.g. merged into another one, so a client
+     *            polling with modified_since learns about deletions
      *        page=1 (optional, default 1)
      *        page_size=50 (optional, default 50, max 100)
      *
@@ -90,8 +93,12 @@ class ConversationsApiController extends Controller
         }
         $pageSize = min($pageSize, self::MAX_PAGE_SIZE);
 
+        $states = [Conversation::STATE_PUBLISHED];
+        if (in_array((string) $request->query('include_deleted'), ['1', 'true'], true)) {
+            $states[] = Conversation::STATE_DELETED;
+        }
         $query = Conversation::query()
-            ->where('state', Conversation::STATE_PUBLISHED);
+            ->whereIn('state', $states);
 
         if ($modifiedSince) {
             // Oldest-modified-first with a stable (updated_at, id) order, so a
@@ -138,6 +145,12 @@ class ConversationsApiController extends Controller
     /**
      * GET /everymarket/api/conversations/{id}
      *
+     * Deleted conversations are returned too (state "deleted"), as FreeScout
+     * still shows them in the Deleted folder. Merging moves a conversation's
+     * threads into the other one and deletes it; mergedInto names that one.
+     * lineItems lists the merge, delete and restore entries FreeScout shows
+     * in the conversation's history. Replying needs a published one.
+     *
      * Query: threads=0 to omit the embedded thread list (included by default)
      *
      * Auth: header X-Everymarket-Api-Token, Authorization: Bearer <token>, or ?api_token=
@@ -148,7 +161,7 @@ class ConversationsApiController extends Controller
             return $this->unauthorizedResponse();
         }
 
-        $conversation = Conversation::where('state', Conversation::STATE_PUBLISHED)
+        $conversation = Conversation::whereIn('state', [Conversation::STATE_PUBLISHED, Conversation::STATE_DELETED])
             ->with(['customer', 'user'])
             ->find((int) $id);
 
@@ -161,6 +174,16 @@ class ConversationsApiController extends Controller
 
         $data = $this->transform($conversation);
         $data['customFields'] = $this->getCustomFields($conversation);
+        $data['lineItems'] = $this->getLineItems($conversation);
+        $data['mergedInto'] = null;
+        if ($conversation->state == Conversation::STATE_DELETED) {
+            foreach (array_reverse($data['lineItems']) as $item) {
+                if ($item['action'] === 'merged_into' && $item['conversation']) {
+                    $data['mergedInto'] = $item['conversation'];
+                    break;
+                }
+            }
+        }
 
         $include_threads = $request->query('threads', '1') !== '0';
         if ($include_threads) {
@@ -949,6 +972,53 @@ class ConversationsApiController extends Controller
 
         return $threads->map(function (Thread $thread) {
             return $this->threadToArray($thread);
+        })->values()->all();
+    }
+
+    /**
+     * The merge, delete and restore entries of the conversation's history,
+     * oldest first, as FreeScout shows them:
+     *   merged_into - this conversation was merged into `conversation`
+     *   merged_with - `conversation` was merged into this one
+     *   deleted, restored
+     */
+    protected function getLineItems(Conversation $conversation): array
+    {
+        $items = $conversation->threads()
+            ->where('type', Thread::TYPE_LINEITEM)
+            ->whereIn('action_type', [Thread::ACTION_TYPE_MERGED, Thread::ACTION_TYPE_DELETED_TICKET, Thread::ACTION_TYPE_RESTORE_TICKET])
+            ->with(['created_by_user'])
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        return $items->map(function (Thread $thread) {
+            $other_id = null;
+            if ($thread->action_type == Thread::ACTION_TYPE_MERGED) {
+                $other_id = $thread->getMeta(Thread::META_MERGED_INTO_CONV);
+                $action = $other_id ? 'merged_into' : 'merged_with';
+                if (!$other_id) {
+                    $other_id = $thread->getMeta(Thread::META_MERGED_WITH_CONV);
+                }
+            } elseif ($thread->action_type == Thread::ACTION_TYPE_DELETED_TICKET) {
+                $action = 'deleted';
+            } else {
+                $action = 'restored';
+            }
+
+            $other = $other_id ? Conversation::find((int) $other_id) : null;
+
+            return [
+                'id'           => (int) $thread->id,
+                'action'       => $action,
+                'createdAt'    => $thread->created_at ? $thread->created_at->toIso8601String() : null,
+                'createdBy'    => $this->userToArray($thread->created_by_user),
+                'conversation' => $other_id ? [
+                    'id'     => (int) $other_id,
+                    'number' => $other ? (int) $other->number : null,
+                    'state'  => $other ? (Conversation::$states[$other->state] ?? (string) $other->state) : null,
+                ] : null,
+            ];
         })->values()->all();
     }
 
